@@ -134,13 +134,20 @@ def proses_beacon(data, addr, node):
     host = addr[0]
     ip_lokal = set(deteksi_ip_non_loopback())
     ip_lokal.add("127.0.0.1")
+    ip_lokal.add("localhost")
     ip_lokal.add(IFACE_IP)
     if http_port == node.port and host in ip_lokal:
         return None
     peer = f"{host}:{http_port}"
     if peer in node.peers:
         return peer
-    node.tambah_peer(peer, timbal_balik=False)
+    for p in node.peers:
+        h, _, pt = p.rpartition(":")
+        if pt == str(http_port) and (h in ip_lokal or host in ip_lokal):
+            return peer
+    added = node.tambah_peer(peer, timbal_balik=False)
+    if not added:
+        return None
     node.jadwalkan_resolve()
     log(f"discovery: peer baru {peer}")
     return peer
@@ -701,7 +708,7 @@ def thread_resolver(stop_event):
                 NODE.resolve()
             except Exception as e:
                 log(f"resolve background error: {e}")
-        stop_event.wait(15)
+        stop_event.wait(30)
 
 
 def mulai_discovery(node, iface_ip, stop_event):
