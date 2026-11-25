@@ -246,6 +246,17 @@ Catatan: discovery memakai UDP broadcast; firewall/AP isolation dapat memblokirn
 
 ## 7. Penggunaan client CLI
 
+### Mode interaktif client
+
+Jalankan tanpa argumen:
+
+```bash
+python client.py
+```
+
+Client akan otomatis menemukan node di jaringan (UDP discovery) dan menyediakan menu untuk memilih node, mengganti pemilih (NIM), vote, mine, tally, dan fitur pengujian lainnya. Mode perintah lama tetap tersedia: `python client.py <perintah> <node> ...`.
+
+
 Format perintah yang mengakses node:
 
 ```text
