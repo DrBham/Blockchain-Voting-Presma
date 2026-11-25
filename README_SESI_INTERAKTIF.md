@@ -65,6 +65,29 @@ Pengujian integrasi manual:
 - Node yang terlambat start otomatis mengambil chain & rekap dari node yang sudah jalan.
 - Client interaktif berhasil menemukan node, membuat dompet, mengirim vote, dan menampilkan tally.
 
+## 6. Aplikasi Web (Flask) - CRUD Paslon
+
+Web app terintegrasi dengan node via `NODE_URL`.
+
+Jalankan minimal 2 node:
+
+```bash
+python node.py 5001
+python node.py 5002 localhost:5001 4
+```
+
+Jalankan web app:
+
+```bash
+set NODE_URL=http://localhost:5001
+set AUTO_MINE=true
+python -m flask --app web.app run --port 5000
+```
+
+Buka `http://localhost:5000`. Fitur: dashboard, CRUD Paslon, deploy smart contract, riwayat, verifikasi chain, rebuild state, status node.
+
+Node interaktif juga bisa dipakai; sesuaikan `NODE_URL` dengan port yang tampil.
+
 ## 5. Catatan
 
 - Discovery memakai UDP broadcast; firewall/AP isolation dapat memblokirnya. Gunakan "Tambah peer manual" sebagai fallback.
