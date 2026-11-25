@@ -108,6 +108,19 @@ def deteksi_ip_utama(otomatis=False):
 def cari_port_kosong(mulai=5001, maks_percobaan=100):
     """Cari port TCP kosong mulai dari `mulai`. Kembalikan None jika tidak ada."""
     for port in range(mulai, mulai + maks_percobaan):
+        # Pada Windows, bind() bisa berhasil meski port dipakai (SO_REUSEADDR permisif),
+        # jadi cek dengan connect() apakah ada yang mendengarkan.
+        in_use = False
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.2)
+                if s.connect_ex(("127.0.0.1", port)) == 0:
+                    in_use = True
+        except OSError:
+            in_use = True
+        if in_use:
+            continue
+        # coba bind untuk memastikan
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
                 s.bind(("0.0.0.0", port))
