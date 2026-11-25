@@ -109,7 +109,6 @@ def cari_port_kosong(mulai=5001, maks_percobaan=100):
     """Cari port TCP kosong mulai dari `mulai`. Kembalikan None jika tidak ada."""
     for port in range(mulai, mulai + maks_percobaan):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 s.bind(("0.0.0.0", port))
                 return port
