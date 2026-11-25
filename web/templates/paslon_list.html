@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Daftar Paslon</h2>
+<table class="table table-sm">
+  <thead><tr><th>Nomor</th><th>Nama</th><th>Visi</th><th>Aktif</th><th>Block</th></tr></thead>
+  <tbody>
+  {% for p in paslons %}
+    <tr>
+      <td>{{ p.nomor }}</td>
+      <td>{{ p.nama }}</td>
+      <td>{{ p.visi }}</td>
+      <td>{{ 'Ya' if p.aktif else 'Tidak' }}</td>
+      <td>{{ p.block_number }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<a class="btn btn-success" href="/paslon/tambah">Tambah Paslon</a>
+{% endblock %}

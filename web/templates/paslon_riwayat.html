@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Riwayat Paslon {{ pid }}</h2>
+<table class="table table-sm">
+  <thead><tr><th>Block</th><th>Fungsi</th><th>Args</th><th>Timestamp</th></tr></thead>
+  <tbody>
+  {% for r in riwayat %}
+    <tr>
+      <td>{{ r.block }}</td>
+      <td>{{ r.fungsi }}</td>
+      <td>{{ r.args }}</td>
+      <td>{{ r.timestamp }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<a class="btn btn-secondary" href="/">Kembali</a>
+{% endblock %}

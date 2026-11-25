@@ -476,6 +476,34 @@ Rencana pengembangan pada Sub-CPMK 6 mencakup pengujian multi-node lanjutan, val
 **Program studi:** S1 Teknik Informatika, Fakultas Teknik, Universitas Tadulako.  
 **Tahun:** 2026.
 
+## 12. Aplikasi Web (Flask) - CRUD Paslon
+
+Jalankan minimal 2 node (terminal terpisah):
+
+```bash
+python node.py 5001
+python node.py 5002 localhost:5001 4
+```
+
+Jalankan web app:
+
+```bash
+set NODE_URL=http://localhost:5001
+set AUTO_MINE=true
+python -m flask --app web.app run --port 5000
+```
+
+Buka `http://localhost:5000`. Fitur:
+- Dashboard + daftar Paslon (SQLite) + nomor block.
+- Tambah/Ubah/Hapus (soft delete) Paslon.
+- Deploy smart contract (alamat tercetak).
+- Riwayat perubahan per Paslon (ditelusuri dari chain).
+- Verifikasi integritas chain.
+- Rebuild state SQLite dari chain.
+- Status node & peers.
+
+Mode perintah lama dan mode interaktif node/client tetap tersedia.
+
 ## 13. Pemecahan masalah
 
 | Gejala | Penyebab atau langkah penanganan |
