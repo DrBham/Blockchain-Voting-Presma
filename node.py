@@ -491,8 +491,11 @@ class Node:
         self.peers.append(peer)
         log(f"peer baru ditambahkan: {peer}")
         if timbal_balik:
+            host_lokal = IFACE_IP if IFACE_IP else deteksi_ip_utama(otomatis=True)
+            if not host_lokal or host_lokal == "127.0.0.1":
+                host_lokal = "127.0.0.1"
             try:
-                kirim_json(f"http://{peer}/peers", {"peer": f"127.0.0.1:{self.port}", "timbal_balik": False})
+                kirim_json(f"http://{peer}/peers", {"peer": f"{host_lokal}:{self.port}", "timbal_balik": False})
             except Exception as e:
                 log(f" !! peer {peer} belum bisa menambahkan node ini ({e})")
         return True
@@ -546,6 +549,78 @@ class Node:
 
 
 NODE = None
+
+
+def thread_broadcaster(iface_ip, stop_event):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    try:
+        sock.bind((iface_ip, 0))
+    except OSError:
+        try:
+            sock.bind(("0.0.0.0", 0))
+        except OSError:
+            return
+    while not stop_event.is_set():
+        payload = json.dumps({
+            "type": "presma-node",
+            "http_port": PORT,
+            "difficulty": NODE.blockchain.difficulty if NODE else 4,
+            "genesis": NODE.blockchain.chain[0].hash if NODE else "",
+        }).encode("utf-8")
+        for target in ("255.255.255.255", "127.0.0.1"):
+            try:
+                sock.sendto(payload, (target, DISCOVERY_PORT))
+            except OSError:
+                pass
+        stop_event.wait(5)
+    sock.close()
+
+
+def thread_listener(stop_event):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.bind(("0.0.0.0", DISCOVERY_PORT))
+    except OSError as e:
+        log(f"discovery listener gagal bind: {e}")
+        return
+    sock.settimeout(1)
+    while not stop_event.is_set():
+        try:
+            data, addr = sock.recvfrom(65535)
+        except socket.timeout:
+            continue
+        except OSError:
+            continue
+        try:
+            obj = json.loads(data.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if NODE is not None:
+            proses_beacon(obj, addr, NODE)
+    sock.close()
+
+
+def thread_resolver(stop_event):
+    while not stop_event.is_set():
+        if NODE is not None:
+            try:
+                NODE.resolve()
+            except Exception as e:
+                log(f"resolve background error: {e}")
+        stop_event.wait(15)
+
+
+def mulai_discovery(node, iface_ip, stop_event):
+    threads = [
+        threading.Thread(target=thread_broadcaster, args=(iface_ip, stop_event), daemon=True),
+        threading.Thread(target=thread_listener, args=(stop_event,), daemon=True),
+        threading.Thread(target=thread_resolver, args=(stop_event,), daemon=True),
+    ]
+    for t in threads:
+        t.start()
+    return threads
 
 
 class NodeHandler(BaseHTTPRequestHandler):
