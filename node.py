@@ -13,6 +13,8 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
+from contract import PaslonContract, state_paslon_dari_chain
+
 PORT = 0
 IFACE_IP = "127.0.0.1"
 
@@ -226,15 +228,40 @@ class Transaksi:
 
 # [CHECKPOINT 3] Aturan penerimaan transaksi. Transaksi yang isinya diubah setelah
 # ditandatangani GAGAL di sini dan ditolak dengan alasan yang dikembalikan.
-def validasi_transaksi(tx):
+def validasi_transaksi(tx, state_paslon=None):
     """Aturan satu transaksi (dipakai saat masuk pool maupun saat memeriksa block)."""
+    if not tx.verifikasi():
+        return False, "signature tidak cocok (isi transaksi diubah setelah ditandatangani atau kunci salah)"
+
+    if getattr(tx, "tipe", "VOTE") == "CONTRACT_CALL":
+        payload = tx.payload or {}
+        if not isinstance(payload, dict):
+            return False, "payload contract tidak valid"
+        addr = payload.get("contract_address")
+        fungsi = payload.get("fungsi")
+        args = payload.get("args", {})
+        if not addr:
+            return False, "contract_address wajib diisi"
+        if fungsi not in ("tambah_paslon", "ubah_paslon", "hapus_paslon"):
+            return False, f"fungsi contract '{fungsi}' tidak dikenal"
+        if state_paslon is None:
+            state_paslon = []
+        from contract import PaslonContract
+        contract = PaslonContract(addr)
+        if fungsi == "tambah_paslon":
+            ok, alasan, _ = contract.tambah_paslon(state_paslon, args or {})
+        elif fungsi == "ubah_paslon":
+            ok, alasan, _ = contract.ubah_paslon(state_paslon, args or {})
+        else:
+            ok, alasan, _ = contract.hapus_paslon(state_paslon, args or {})
+        return ok, alasan
+
+    # VOTE
     if tx.kandidat not in PASLON_VALID:
         return False, f"Kandidat '{tx.kandidat}' tidak valid. Pilihan resmi: {', '.join(PASLON_VALID)}"
     nim_valid, pesan_err = validasi_nim_untad(str(tx.voter_id))
     if not nim_valid:
         return False, f"NIM '{tx.voter_id}' ditolak: {pesan_err}"
-    if not tx.verifikasi():
-        return False, "signature tidak cocok (isi transaksi diubah setelah ditandatangani atau kunci salah)"
     return True, "valid"
 
 
@@ -296,7 +323,7 @@ class Block:
 
 # [CHECKPOINT 11] Block tanpa proof of work valid ditolak di sini (alasan dikembalikan).
 # [CHECKPOINT 9] Pemeriksaan hash/previous hash di sini juga yang mendeteksi data block yang diubah.
-def validasi_block(block, induk, difficulty, voters_sebelumnya):
+def validasi_block(block, induk, difficulty, voters_sebelumnya, state_paslon=None):
     """Periksa satu block terhadap block sebelumnya. Mengembalikan (ok, alasan)."""
     if block.index != induk.index + 1:
         if block.index > induk.index + 1:
@@ -313,13 +340,31 @@ def validasi_block(block, induk, difficulty, voters_sebelumnya):
         return False, "block tidak berisi transaksi"
 
     dilihat = set(voters_sebelumnya)
+    state = [dict(p) for p in (state_paslon or [])]
     for tx in block.transaksi:
-        ok, alasan = validasi_transaksi(tx)
+        ok, alasan = validasi_transaksi(tx, state)
         if not ok:
             return False, alasan
-        if tx.voter_id in dilihat:
-            return False, f"NIM '{tx.voter_id}' memilih lebih dari sekali"
-        dilihat.add(tx.voter_id)
+        tipe = getattr(tx, "tipe", "VOTE")
+        if tipe == "CONTRACT_CALL":
+            payload = tx.payload or {}
+            fungsi = payload.get("fungsi")
+            args = payload.get("args", {})
+            contract = PaslonContract(payload.get("contract_address", ""))
+            if fungsi == "tambah_paslon":
+                ok2, alasan2, state = contract.tambah_paslon(state, args or {})
+            elif fungsi == "ubah_paslon":
+                ok2, alasan2, state = contract.ubah_paslon(state, args or {})
+            elif fungsi == "hapus_paslon":
+                ok2, alasan2, state = contract.hapus_paslon(state, args or {})
+            else:
+                ok2, alasan2 = False, "fungsi contract tidak dikenal"
+            if not ok2:
+                return False, alasan2
+        else:
+            if tx.voter_id in dilihat:
+                return False, f"NIM '{tx.voter_id}' memilih lebih dari sekali"
+            dilihat.add(tx.voter_id)
     return True, "valid"
 
 
@@ -333,11 +378,13 @@ def validasi_rantai(chain, difficulty):
         return False, 0, "genesis block tidak sah"
 
     voters = set()
+    state_paslon = []
     for i in range(1, len(chain)):
-        ok, alasan = validasi_block(chain[i], chain[i - 1], difficulty, voters)
+        ok, alasan = validasi_block(chain[i], chain[i - 1], difficulty, voters, state_paslon)
         if not ok:
             return False, i, alasan
-        voters.update(tx.voter_id for tx in chain[i].transaksi)
+        voters.update(tx.voter_id for tx in chain[i].transaksi if getattr(tx, "tipe", "VOTE") == "VOTE")
+        state_paslon = state_paslon_dari_chain(chain[:i + 1])
     return True, None, "rantai valid"
 
 
@@ -377,7 +424,7 @@ class Blockchain:
             log(f"Signature: {tx.signature[:32]}...")
 
             # [CHECKPOINT 3] Verifikasi signature; kalau gagal, alasan penolakan dicetak
-            ok, alasan = validasi_transaksi(tx)
+            ok, alasan = validasi_transaksi(tx, state_paslon_dari_chain(self.chain))
             if not ok:
                 log(f"DITOLAK: {alasan}")
                 return False, alasan, False
@@ -429,7 +476,7 @@ class Blockchain:
 
     def terima_block(self, block):
         with self.lock:
-            ok, alasan = validasi_block(block, self.terakhir(), self.difficulty, self.voters_di_rantai())
+            ok, alasan = validasi_block(block, self.terakhir(), self.difficulty, self.voters_di_rantai(), state_paslon_dari_chain(self.chain))
             if not ok:
                 # [CHECKPOINT 11] Status penolakan block tidak sah tercetak (409)
                 log(f"block {block.index} DITOLAK: {alasan} (status 409)")
