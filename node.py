@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import socket
 import sys
 import threading
 import time
@@ -13,6 +14,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
 PORT = 0
+IFACE_IP = "127.0.0.1"
 
 PASLON_VALID = ("Paslon 1", "Paslon 2")
 ANGKATAN_VALID = {"23", "24", "25"}  # Angkatan 2023 (Sem 7), 2024 (Sem 5), 2025 (Sem 3)
@@ -43,6 +45,86 @@ def validasi_nim_untad(nim):
         return False, f"Angkatan '20{angkatan}' tidak memenuhi syarat (Hanya Semester 3-7 / Angkatan 2023-2025)!"
 
     return True, "Valid"
+
+
+def deteksi_ip_non_loopback():
+    """Kembalikan daftar IPv4 non-loopback yang dimiliki mesin."""
+    ips = set()
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None):
+            ip = info[4][0]
+            if ip and not ip.startswith("127."):
+                ips.add(ip)
+    except socket.gaierror:
+        pass
+    try:
+        for ip in socket.gethostbyname_ex(socket.gethostname())[2]:
+            if ip and not ip.startswith("127."):
+                ips.add(ip)
+    except socket.gaierror:
+        pass
+    return sorted(ips)
+
+
+def deteksi_ip_utama(otomatis=False):
+    """Pilih IP interface utama. Prompt jika >1 dan tidak otomatis."""
+    ips = deteksi_ip_non_loopback()
+    if not ips:
+        return "127.0.0.1"
+    if len(ips) == 1 or otomatis:
+        return ips[0]
+    print("Beberapa interface terdeteksi:")
+    for i, ip in enumerate(ips, 1):
+        print(f"  {i}. {ip}")
+    while True:
+        pilihan = input(f"Pilih interface [1-{len(ips)}] (default 1): ").strip()
+        if pilihan == "":
+            return ips[0]
+        if pilihan.isdigit() and 1 <= int(pilihan) <= len(ips):
+            return ips[int(pilihan) - 1]
+        print("Pilihan tidak valid.")
+
+
+def cari_port_kosong(mulai=5001, maks_percobaan=100):
+    """Cari port TCP kosong mulai dari `mulai`. Kembalikan None jika tidak ada."""
+    for port in range(mulai, mulai + maks_percobaan):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.bind(("0.0.0.0", port))
+                return port
+            except OSError:
+                continue
+    return None
+
+
+DISCOVERY_PORT = 9999
+
+
+def proses_beacon(data, addr, node):
+    """Proses satu beacon discovery. Kembalikan peer string jika peer baru ditambah, else None."""
+    if not isinstance(data, dict) or data.get("type") != "presma-node":
+        return None
+    try:
+        http_port = int(data["http_port"])
+        difficulty = int(data["difficulty"])
+        genesis = str(data["genesis"])
+    except (KeyError, ValueError, TypeError):
+        return None
+    if difficulty != node.blockchain.difficulty:
+        return None
+    if genesis != node.blockchain.chain[0].hash:
+        return None
+    host = addr[0]
+    if host == IFACE_IP and http_port == node.port:
+        return None
+    peer = f"{host}:{http_port}"
+    if peer in node.peers:
+        return peer
+    node.tambah_peer(peer, timbal_balik=False)
+    node.jadwalkan_resolve()
+    log(f"discovery: peer baru {peer}")
+    return peer
 
 
 def alamat_dari_pem(public_key_pem):
@@ -381,6 +463,8 @@ class Node:
         self.port = port
         self.peers = list(peers)
         self.blockchain = Blockchain(difficulty)
+        self._resolve_terakhir = 0
+        self.http_server = None
 
     # [CHECKPOINT 10] Broadcast transaksi antar-node (log pengiriman tercetak)
     def broadcast_transaksi(self, tx):
@@ -444,6 +528,21 @@ class Node:
             bc.pool = [tx for tx in bc.pool if tx.voter_id not in sudah]
         log(f"RESOLVE: rantai diganti dengan rantai terpanjang ({len(terpanjang)} block)")
         return True
+
+    def jadwalkan_resolve(self):
+        now = time.time()
+        if now - getattr(self, "_resolve_terakhir", 0) < 5:
+            return
+        self._resolve_terakhir = now
+
+        def _run():
+            time.sleep(1.5)
+            try:
+                self.resolve()
+            except Exception as e:
+                log(f"resolve error: {e}")
+
+        threading.Thread(target=_run, daemon=True).start()
 
 
 NODE = None
