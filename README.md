@@ -224,6 +224,26 @@ docker compose down
 
 Konfigurasi ini belum menyimpan blockchain ke disk atau volume. Restart proses/container mengembalikan node ke genesis; node dapat mengambil kembali rantai dari peer yang masih memiliki data melalui `resolve`.
 
+## 6a. Mode interaktif (auto-discovery)
+
+Jalankan node tanpa argumen:
+
+```bash
+python node.py
+```
+
+Node akan:
+1. Memilih interface jaringan (otomatis jika hanya satu; tanya jika lebih dari satu).
+2. Mencari port kosong mulai 5001.
+3. Menyiarkan keberadaannya via UDP (port 9999) hanya di jaringan terpilih + loopback.
+4. Menemukan node lain dengan difficulty & genesis yang sama dan menyinkronkan chain otomatis.
+
+Menu interaktif menyediakan status, daftar peer, pencarian node, tambah peer manual, dan alamat untuk `client.py`. Voting tetap dilakukan via `client.py` menggunakan alamat yang ditampilkan.
+
+Mode manual lama tetap tersedia: `python node.py <port> [peers] [difficulty]`.
+
+Catatan: discovery memakai UDP broadcast; firewall/AP isolation dapat memblokirnya. Gunakan "Tambah peer manual" sebagai fallback.
+
 ## 7. Penggunaan client CLI
 
 Format perintah yang mengakses node:
