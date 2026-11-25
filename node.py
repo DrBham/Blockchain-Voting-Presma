@@ -161,16 +161,22 @@ def _ke_json_bytes(data):
 # [FITUR WAJIB: Transaksi bertanda tangan] ditandatangani private key pengirim,
 # diverifikasi node sebelum diterima.
 class Transaksi:
-    def __init__(self, voter_id, kandidat, public_key, timestamp=None, signature=""):
+    def __init__(self, voter_id, kandidat, public_key, timestamp=None, signature="", tipe="VOTE", payload=None):
         self.voter_id = voter_id
         self.kandidat = kandidat
         self.public_key = public_key
         self.timestamp = timestamp if timestamp is not None else time.time()
         self.signature = signature
+        self.tipe = tipe or "VOTE"
+        if payload is None:
+            payload = {"kandidat": kandidat} if self.tipe == "VOTE" else {}
+        self.payload = payload
 
     def pesan(self):
         """Isi yang ditandatangani. Kalau salah satu isinya diubah, signature jadi tidak cocok."""
         return _ke_json_bytes({
+            "tipe": self.tipe,
+            "payload": self.payload,
             "voter_id": self.voter_id,
             "kandidat": self.kandidat,
             "timestamp": self.timestamp,
@@ -196,6 +202,8 @@ class Transaksi:
 
     def to_dict(self):
         return {
+            "tipe": self.tipe,
+            "payload": self.payload,
             "voter_id": self.voter_id,
             "kandidat": self.kandidat,
             "timestamp": self.timestamp,
@@ -205,7 +213,15 @@ class Transaksi:
 
     @classmethod
     def from_dict(cls, d):
-        return cls(d["voter_id"], d["kandidat"], d["public_key"], d["timestamp"], d["signature"])
+        return cls(
+            voter_id=d["voter_id"],
+            kandidat=d.get("kandidat"),
+            public_key=d["public_key"],
+            timestamp=d.get("timestamp"),
+            signature=d.get("signature", ""),
+            tipe=d.get("tipe", "VOTE"),
+            payload=d.get("payload"),
+        )
 
 
 # [CHECKPOINT 3] Aturan penerimaan transaksi. Transaksi yang isinya diubah setelah
