@@ -87,11 +87,15 @@ def deteksi_ip_utama(otomatis=False):
     ips = deteksi_ip_non_loopback()
     if not ips:
         return "127.0.0.1"
-    if len(ips) == 1 or otomatis:
+    if otomatis:
         return ips[0]
-    print("Beberapa interface terdeteksi:")
+    # Tambah opsi local agar bisa menjalankan node hanya di mesin yang sama
+    if "127.0.0.1" not in ips:
+        ips = ips + ["127.0.0.1"]
+    print("Pilih interface jaringan:")
     for i, ip in enumerate(ips, 1):
-        print(f"  {i}. {ip}")
+        label = " (local only)" if ip == "127.0.0.1" else ""
+        print(f"  {i}. {ip}{label}")
     while True:
         pilihan = input(f"Pilih interface [1-{len(ips)}] (default 1): ").strip()
         if pilihan == "":
