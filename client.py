@@ -1,7 +1,10 @@
 # Client perintah voting UNTAD. Private key disimpan lokal dan tidak dikirim ke node.
 
 import json
+import socket
 import sys
+import threading
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -12,6 +15,8 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from node import Block, Transaksi, alamat_dari_pem
 
 BATAS_WAKTU_NODE = 120
+NODE_DISCOVERY_PORT = 9999
+DISCOVERED_NODES = set()
 
 
 class Dompet:
@@ -91,6 +96,34 @@ def ringkas(chain):
               f"| {len(b['transaksi'])} transaksi")
         for t in b["transaksi"]:
             print(f"      - {t['voter_id']} -> {t['kandidat']} | sig {t['signature'][:16]}...")
+
+
+def discovery_listener(stop_event):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.bind(("0.0.0.0", NODE_DISCOVERY_PORT))
+    except OSError:
+        return
+    sock.settimeout(1)
+    while not stop_event.is_set():
+        try:
+            data, addr = sock.recvfrom(65535)
+        except socket.timeout:
+            continue
+        except OSError:
+            continue
+        try:
+            obj = json.loads(data.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if obj.get("type") == "presma-node":
+            try:
+                port = int(obj["http_port"])
+            except (KeyError, ValueError, TypeError):
+                continue
+            DISCOVERED_NODES.add(f"{addr[0]}:{port}")
+    sock.close()
 
 
 def panggil_node(alamat, endpoint, data=None):
@@ -237,6 +270,119 @@ def perintah_palsu(arg):
     print(f"Alasan: {hasil.get('error')}")
 
 
+def pilih_node_interaktif():
+    global DISCOVERED_NODES
+    print("Menunggu discovery node selama 6 detik...")
+    time.sleep(6)
+    nodes = sorted(DISCOVERED_NODES)
+    if nodes:
+        print("Node ditemukan:")
+        for i, n in enumerate(nodes, 1):
+            print(f"  {i}. {n}")
+        print("  0. Input manual")
+        pilihan = input("Pilih: ").strip()
+        if pilihan.isdigit() and 1 <= int(pilihan) <= len(nodes):
+            return nodes[int(pilihan) - 1]
+    alamat = input("Alamat node (host:port): ").strip()
+    return alamat or None
+
+
+def menu_interaktif():
+    stop_event = threading.Event()
+    threading.Thread(target=discovery_listener, args=(stop_event,), daemon=True).start()
+
+    target_node = None
+    dompet = None
+
+    try:
+        while True:
+            print("\n=== Client Voting Presma (Interaktif) ===")
+            print(f"Node target : {target_node or '(belum dipilih)'}")
+            print(f"Pemilih     : {dompet.nim if dompet else '(belum dipilih)'}")
+            print("1. Pilih/refresh node (auto-discover)")
+            print("2. Pilih/ganti pemilih (NIM)")
+            print("3. Lihat identitas")
+            print("4. Kirim vote")
+            print("5. Uji vote_ubah (signature)")
+            print("6. Lihat pool")
+            print("7. Mine")
+            print("8. Lihat chain")
+            print("9. Validate")
+            print("10. Tally")
+            print("11. Tamper (demo)")
+            print("12. Add peer")
+            print("13. Resolve")
+            print("14. Uji block palsu")
+            print("0. Keluar")
+            pilihan = input("Pilih: ").strip()
+
+            if pilihan == "0":
+                break
+            if pilihan == "1":
+                target_node = pilih_node_interaktif()
+                continue
+            if pilihan == "2":
+                nim = input("NIM: ").strip()
+                if nim:
+                    dompet = Dompet(nim)
+                    dompet.tampilkan_identitas()
+                continue
+
+            if not target_node:
+                print("Pilih node terlebih dahulu (menu 1).")
+                continue
+
+            if pilihan == "3":
+                if dompet:
+                    dompet.tampilkan_identitas()
+                else:
+                    print("Pilih pemilih terlebih dahulu (menu 2).")
+            elif pilihan == "4":
+                if not dompet:
+                    print("Pilih pemilih terlebih dahulu (menu 2).")
+                    continue
+                kandidat = input("Kandidat (Paslon 1/Paslon 2): ").strip()
+                if kandidat:
+                    tx = dompet.buat_transaksi(kandidat)
+                    print(f"Transaksi dibuat dan ditandatangani: {tx.voter_id} -> {tx.kandidat}")
+                    print(f"  Signature: {tx.signature[:32]}...")
+                    kirim_transaksi(target_node, tx)
+            elif pilihan == "5":
+                if not dompet:
+                    print("Pilih pemilih terlebih dahulu (menu 2).")
+                    continue
+                asli = input("Kandidat asli: ").strip()
+                diubah = input("Kandidat diubah: ").strip()
+                if asli and diubah:
+                    perintah_vote_ubah([target_node, asli, diubah, dompet.nim])
+            elif pilihan == "6":
+                perintah_pool([target_node])
+            elif pilihan == "7":
+                perintah_mine([target_node])
+            elif pilihan == "8":
+                perintah_chain([target_node])
+            elif pilihan == "9":
+                perintah_validate([target_node])
+            elif pilihan == "10":
+                perintah_tally([target_node])
+            elif pilihan == "11":
+                idx = input("Index block: ").strip()
+                if idx:
+                    perintah_tamper([target_node, idx])
+            elif pilihan == "12":
+                peer = input("Alamat peer (host:port): ").strip()
+                if peer:
+                    perintah_add_peer([target_node, peer])
+            elif pilihan == "13":
+                perintah_resolve([target_node])
+            elif pilihan == "14":
+                perintah_palsu([target_node])
+            else:
+                print("Pilihan tidak valid.")
+    finally:
+        stop_event.set()
+
+
 PERINTAH = {
     "identitas": perintah_identitas,
     "vote": perintah_vote,
@@ -254,6 +400,9 @@ PERINTAH = {
 
 
 def main():
+    if len(sys.argv) == 1:
+        menu_interaktif()
+        return
     if len(sys.argv) < 3 or sys.argv[1] not in PERINTAH:
         print(BANTUAN)
         return
