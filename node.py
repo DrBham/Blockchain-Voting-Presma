@@ -723,15 +723,103 @@ class NodeHandler(BaseHTTPRequestHandler):
             self._balas(404, {"error": "endpoint tidak dikenal"})
 
 
+def tambah_peer_manual(node, peer):
+    try:
+        data = ambil_json(f"http://{peer}/chain")
+    except Exception as e:
+        print(f"Gagal menghubungi {peer}: {e}")
+        return
+    if data.get("difficulty") != node.blockchain.difficulty:
+        print(f"Ditolak: difficulty peer ({data.get('difficulty')}) != lokal ({node.blockchain.difficulty})")
+        return
+    rantai_peer = data.get("chain", [])
+    if not rantai_peer or rantai_peer[0].get("hash") != node.blockchain.chain[0].hash:
+        print("Ditolak: genesis tidak cocok")
+        return
+    if node.tambah_peer(peer, timbal_balik=True):
+        print(f"Peer {peer} ditambahkan.")
+        node.jadwalkan_resolve()
+    else:
+        print("Peer tidak valid atau sudah ada.")
+
+
+def menu_interaktif(node):
+    stop_event = threading.Event()
+    mulai_discovery(node, IFACE_IP, stop_event)
+    try:
+        while True:
+            print("\n=== Node Voting Presma (Interaktif) ===")
+            print(f"Interface: {IFACE_IP} | Node: http://{IFACE_IP}:{node.port} (difficulty {node.blockchain.difficulty})")
+            print("1. Status")
+            print("2. Daftar peer")
+            print("3. Cari node (tunggu 6 detik)")
+            print("4. Tambah peer manual")
+            print("5. Tampilkan alamat untuk client.py")
+            print("6. Hentikan node")
+            pilihan = input("Pilih: ").strip()
+            if pilihan == "1":
+                with node.blockchain.lock:
+                    print(f"Port: {node.port} | Peers: {len(node.peers)} | Rantai: {len(node.blockchain.chain)} block | Pool: {len(node.blockchain.pool)}")
+                print("Peers:", node.peers)
+            elif pilihan == "2":
+                print("Peers:", node.peers)
+            elif pilihan == "3":
+                print("Mencari node lain selama 6 detik...")
+                time.sleep(6)
+                print("Peers sekarang:", node.peers)
+            elif pilihan == "4":
+                peer = input("Alamat peer (host:port): ").strip()
+                if peer:
+                    tambah_peer_manual(node, peer)
+            elif pilihan == "5":
+                print(f"Gunakan di client.py: {IFACE_IP}:{node.port}")
+            elif pilihan == "6":
+                break
+            else:
+                print("Pilihan tidak valid.")
+    finally:
+        stop_event.set()
+        if getattr(node, "http_server", None):
+            try:
+                node.http_server.shutdown()
+            except Exception:
+                pass
+
+
 if __name__ == "__main__":
-    PORT = int(sys.argv[1])
-    peers_awal = sys.argv[2].split(",") if len(sys.argv) > 2 and sys.argv[2] else []
-    difficulty = int(sys.argv[3]) if len(sys.argv) > 3 else 4
+    if len(sys.argv) == 1:
+        IFACE_IP = deteksi_ip_utama(otomatis=False)
+        port = cari_port_kosong()
+        if port is None:
+            print("Tidak ada port kosong di range 5001-5100.")
+            sys.exit(1)
+        PORT = port
+        peers_awal = []
+        difficulty = 4
+        interaktif = True
+    else:
+        PORT = int(sys.argv[1])
+        peers_awal = sys.argv[2].split(",") if len(sys.argv) > 2 and sys.argv[2] else []
+        difficulty = int(sys.argv[3]) if len(sys.argv) > 3 else 4
+        IFACE_IP = deteksi_ip_utama(otomatis=True)
+        interaktif = False
 
     NODE = Node(PORT, peers_awal, difficulty)
     print(f"Node Voting UNTAD aktif di port {PORT}")
     print("Peers     : " + (", ".join(peers_awal) if peers_awal else "(belum ada)"))
     print(f"Difficulty: {difficulty} (hash harus diawali {'0' * difficulty})")
-    print(f"Genesis   : {NODE.blockchain.chain[0].hash[:20]}...", flush=True)
+    print(f"Genesis   : {NODE.blockchain.chain[0].hash[:20]}...")
+    print(f"Interface : {IFACE_IP}")
 
-    ThreadingHTTPServer(("0.0.0.0", PORT), NodeHandler).serve_forever()
+    if interaktif:
+        server = ThreadingHTTPServer(("0.0.0.0", PORT), NodeHandler)
+        NODE.http_server = server
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        menu_interaktif(NODE)
+    else:
+        stop_event = threading.Event()
+        mulai_discovery(NODE, IFACE_IP, stop_event)
+        try:
+            ThreadingHTTPServer(("0.0.0.0", PORT), NodeHandler).serve_forever()
+        except KeyboardInterrupt:
+            stop_event.set()
