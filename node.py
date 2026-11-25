@@ -48,22 +48,36 @@ def validasi_nim_untad(nim):
 
 
 def deteksi_ip_non_loopback():
-    """Kembalikan daftar IPv4 non-loopback yang dimiliki mesin."""
+    """Kembalikan daftar IPv4 non-loopback yang dimiliki mesin (diurutkan prioritas hotspot/LAN)."""
     ips = set()
     try:
         for info in socket.getaddrinfo(socket.gethostname(), None):
             ip = info[4][0]
-            if ip and not ip.startswith("127."):
+            if ip and "." in ip and not ip.startswith("127.") and not ip.startswith("169.254."):
                 ips.add(ip)
     except socket.gaierror:
         pass
     try:
         for ip in socket.gethostbyname_ex(socket.gethostname())[2]:
-            if ip and not ip.startswith("127."):
+            if ip and "." in ip and not ip.startswith("127.") and not ip.startswith("169.254."):
                 ips.add(ip)
     except socket.gaierror:
         pass
-    return sorted(ips)
+
+    def prioritas(ip):
+        if ip.startswith("192.168.137."):
+            return 0
+        if ip.startswith("192.168."):
+            return 1
+        if ip.startswith("10."):
+            return 2
+        if ip.startswith("172."):
+            bagian = ip.split(".")
+            if len(bagian) >= 2 and bagian[1].isdigit() and 16 <= int(bagian[1]) <= 31:
+                return 3
+        return 4
+
+    return sorted(ips, key=prioritas)
 
 
 def deteksi_ip_utama(otomatis=False):
@@ -116,7 +130,10 @@ def proses_beacon(data, addr, node):
     if genesis != node.blockchain.chain[0].hash:
         return None
     host = addr[0]
-    if host == IFACE_IP and http_port == node.port:
+    ip_lokal = set(deteksi_ip_non_loopback())
+    ip_lokal.add("127.0.0.1")
+    ip_lokal.add(IFACE_IP)
+    if http_port == node.port and host in ip_lokal:
         return None
     peer = f"{host}:{http_port}"
     if peer in node.peers:
