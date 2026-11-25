@@ -91,7 +91,7 @@ def state_paslon_dari_chain(chain):
     """Replay chain menjadi state paslon terkini (list of dict)."""
     state = []
     contract = PaslonContract("replay")
-    for block in chain:
+    for idx, block in enumerate(chain):
         transaksi = getattr(block, "transaksi", None)
         if transaksi is None and isinstance(block, dict):
             transaksi = block.get("transaksi", [])
@@ -103,10 +103,21 @@ def state_paslon_dari_chain(chain):
                 payload = tx.get("payload")
             if tipe != "CONTRACT_CALL" or not isinstance(payload, dict):
                 continue
+            args = payload.get("args", {}) or {}
             if payload.get("fungsi") == "tambah_paslon":
-                ok, _, state = contract.tambah_paslon(state, payload.get("args", {}))
+                ok, _, state = contract.tambah_paslon(state, args)
+                if ok and state:
+                    state[-1]["block_number"] = idx
             elif payload.get("fungsi") == "ubah_paslon":
-                ok, _, state = contract.ubah_paslon(state, payload.get("args", {}))
+                ok, _, state = contract.ubah_paslon(state, args)
+                if ok:
+                    for p in state:
+                        if p.get("id") == args.get("id"):
+                            p["block_number"] = idx
             elif payload.get("fungsi") == "hapus_paslon":
-                ok, _, state = contract.hapus_paslon(state, payload.get("args", {}))
+                ok, _, state = contract.hapus_paslon(state, args)
+                if ok:
+                    for p in state:
+                        if p.get("id") == args.get("id"):
+                            p["block_number"] = idx
     return state
