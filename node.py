@@ -566,7 +566,19 @@ class Node:
                 log(f" !! {label} ke {peer} tidak diterima ({e})")
 
     def tambah_peer(self, peer, timbal_balik=True):
-        if not peer or peer in self.peers:
+        if not peer:
+            return False
+        # Hindari duplikat peer yang sama node (mis. localhost:5001 vs 192.168.x:5001 di mesin yang sama)
+        host_baru, _, port_str = peer.rpartition(":")
+        port_baru = port_str
+        ip_lokal = set(deteksi_ip_non_loopback())
+        ip_lokal.add("127.0.0.1")
+        ip_lokal.add("localhost")
+        for p in self.peers:
+            h, _, pt = p.rpartition(":")
+            if pt == port_baru and (h in ip_lokal or host_baru in ip_lokal):
+                return False
+        if peer in self.peers:
             return False
         self.peers.append(peer)
         log(f"peer baru ditambahkan: {peer}")
