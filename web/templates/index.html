@@ -4,9 +4,11 @@
 <p>Panjang chain: {{ chain_len }}</p>
 <p>Contract: <code>{{ contract or "belum deploy" }}</code> (dibaca dari chain)</p>
 <form method="post" action="/contract/deploy" class="mb-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <button class="btn btn-primary btn-sm">Deploy Contract</button>
 </form>
 <form method="post" action="/state/rebuild" class="mb-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <button class="btn btn-secondary btn-sm">Rebuild State dari Chain</button>
 </form>
 <h4>Daftar Paslon (SQLite)</h4>
@@ -23,6 +25,7 @@
       <td>
         <a class="btn btn-sm btn-warning" href="/paslon/{{ p.id }}/ubah">Ubah</a>
         <form method="post" action="/paslon/{{ p.id }}/hapus" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="btn btn-sm btn-danger">Hapus</button>
         </form>
         <a class="btn btn-sm btn-info" href="/paslon/{{ p.id }}/riwayat">Riwayat</a>

@@ -1,33 +1,82 @@
+# Smart contract mock-up pendaftaran paslon. State contract hanya berubah lewat
+# transaksi CONTRACT_CALL yang tercatat di chain, lalu dibangun ulang dengan replay.
+
 import hashlib
-import random
+import secrets
 import time
+
+FUNGSI_PENGUBAH = ("tambah_paslon", "ubah_paslon", "hapus_paslon")
+MAKS_NAMA = 120
+MAKS_VISI = 500
 
 
 def deploy_contract(nama):
-    """Hasilkan alamat contract (40 hex) dari nama + waktu + nonce."""
-    benih = f"{nama}:{time.time()}:{random.getrandbits(64)}"
+    """Hasilkan alamat contract (40 hex) dari nama + waktu + angka acak."""
+    benih = f"{nama}:{time.time()}:{secrets.token_hex(8)}"
     return hashlib.sha256(benih.encode("utf-8")).hexdigest()[:40]
 
 
+def bilangan_positif(nilai):
+    """Angka bulat >= 1 dari int atau teks digit ASCII. None kalau tidak valid (bool dan float ditolak)."""
+    if isinstance(nilai, str) and nilai.strip().isascii() and nilai.strip().isdigit():
+        nilai = int(nilai)
+    if isinstance(nilai, bool) or not isinstance(nilai, int) or nilai < 1:
+        return None
+    return nilai
+
+
+def _teks(nilai, label, batas, wajib=False):
+    """Mengembalikan (teks_bersih, pesan_error)."""
+    if nilai is None:
+        nilai = ""
+    if not isinstance(nilai, str):
+        return None, f"{label} harus berupa teks"
+    nilai = nilai.strip()
+    if wajib and not nilai:
+        return None, f"{label} paslon tidak boleh kosong"
+    if len(nilai) > batas:
+        return None, f"{label} paslon maksimal {batas} karakter"
+    return nilai, None
+
+
+def _salin(state):
+    return [dict(p) for p in (state or [])]
+
+
+def _paslon_aktif(state, id_mentah):
+    """Mengembalikan (paslon, pesan_error) untuk paslon aktif dengan id tersebut."""
+    pid = bilangan_positif(id_mentah)
+    if pid is None:
+        return None, "id paslon tidak valid"
+    target = next((p for p in state if p["id"] == pid), None)
+    if target is None:
+        return None, f"paslon id {pid} tidak ditemukan"
+    if not target["aktif"]:
+        return None, "paslon sudah tidak aktif"
+    return target, None
+
+
 class PaslonContract:
+    """Fungsi contract tidak mengubah state masukan; mengembalikan (ok, alasan, state_baru)."""
+
     def __init__(self, alamat):
         self.alamat = alamat
 
     def tambah_paslon(self, state, args):
-        state = [dict(p) for p in (state or [])]
-        try:
-            nomor = int(args.get("nomor"))
-        except (TypeError, ValueError, AttributeError):
-            return False, "nomor paslon harus berupa angka", state
-        nama = (args.get("nama") or "").strip()
-        if not nama:
-            return False, "nama paslon tidak boleh kosong", state
-        visi = (args.get("visi") or "").strip()
-        if any(p.get("nomor") == nomor for p in state):
+        state = _salin(state)
+        nomor = bilangan_positif(args.get("nomor"))
+        if nomor is None:
+            return False, "nomor paslon harus angka bulat >= 1", state
+        nama, salah = _teks(args.get("nama"), "nama", MAKS_NAMA, wajib=True)
+        if salah:
+            return False, salah, state
+        visi, salah = _teks(args.get("visi"), "visi", MAKS_VISI)
+        if salah:
+            return False, salah, state
+        if any(p["nomor"] == nomor for p in state):
             return False, f"nomor paslon {nomor} sudah terdaftar", state
-        new_id = (max((p.get("id", 0) for p in state), default=0) + 1)
         state.append({
-            "id": new_id,
+            "id": max((p["id"] for p in state), default=0) + 1,
             "nomor": nomor,
             "nama": nama,
             "visi": visi,
@@ -36,98 +85,88 @@ class PaslonContract:
         return True, "paslon ditambahkan", state
 
     def ubah_paslon(self, state, args):
-        state = [dict(p) for p in (state or [])]
-        try:
-            pid = int(args.get("id"))
-        except (TypeError, ValueError, AttributeError):
-            return False, "id paslon tidak valid", state
-        target = next((p for p in state if p.get("id") == pid), None)
-        if target is None:
-            return False, f"paslon id {pid} tidak ditemukan", state
-        if not target.get("aktif", True):
-            return False, "paslon sudah tidak aktif", state
-        if "nama" in args and args.get("nama") is not None:
-            nama = str(args.get("nama")).strip()
-            if not nama:
-                return False, "nama paslon tidak boleh kosong", state
-            target["nama"] = nama
-        if "visi" in args and args.get("visi") is not None:
-            target["visi"] = str(args.get("visi")).strip()
-        if "nomor" in args and args.get("nomor") is not None:
-            try:
-                nomor_baru = int(args.get("nomor"))
-            except (TypeError, ValueError):
-                return False, "nomor paslon harus berupa angka", state
-            if any(p.get("id") != pid and p.get("nomor") == nomor_baru for p in state):
-                return False, f"nomor paslon {nomor_baru} sudah terdaftar", state
-            target["nomor"] = nomor_baru
+        state = _salin(state)
+        target, salah = _paslon_aktif(state, args.get("id"))
+        if salah:
+            return False, salah, state
+
+        # Semua argumen divalidasi dulu; state baru diubah kalau semuanya sah.
+        perubahan = {}
+        if args.get("nama") is not None:
+            perubahan["nama"], salah = _teks(args["nama"], "nama", MAKS_NAMA, wajib=True)
+            if salah:
+                return False, salah, state
+        if args.get("visi") is not None:
+            perubahan["visi"], salah = _teks(args["visi"], "visi", MAKS_VISI)
+            if salah:
+                return False, salah, state
+        if args.get("nomor") is not None:
+            nomor = bilangan_positif(args["nomor"])
+            if nomor is None:
+                return False, "nomor paslon harus angka bulat >= 1", state
+            if any(p["id"] != target["id"] and p["nomor"] == nomor for p in state):
+                return False, f"nomor paslon {nomor} sudah terdaftar", state
+            perubahan["nomor"] = nomor
+        target.update(perubahan)
         return True, "paslon diubah", state
 
     def hapus_paslon(self, state, args):
-        state = [dict(p) for p in (state or [])]
-        try:
-            pid = int(args.get("id"))
-        except (TypeError, ValueError, AttributeError):
-            return False, "id paslon tidak valid", state
-        target = next((p for p in state if p.get("id") == pid), None)
-        if target is None:
-            return False, f"paslon id {pid} tidak ditemukan", state
-        if not target.get("aktif", True):
-            return False, "paslon sudah tidak aktif", state
+        state = _salin(state)
+        target, salah = _paslon_aktif(state, args.get("id"))
+        if salah:
+            return False, salah, state
         target["aktif"] = False
         return True, "paslon dinonaktifkan (soft delete)", state
 
     def daftar_paslon(self, state):
-        return [dict(p) for p in (state or [])]
+        return _salin(state)
 
     def baca_paslon(self, state, paslon_id):
-        for p in (state or []):
-            if p.get("id") == paslon_id:
-                return dict(p)
-        return None
+        return next((dict(p) for p in (state or []) if p["id"] == paslon_id), None)
+
+
+def jalankan_contract(state, fungsi, args):
+    """Eksekusi satu fungsi pengubah state. Mengembalikan (ok, alasan, state_baru)."""
+    if fungsi not in FUNGSI_PENGUBAH:
+        return False, f"fungsi contract '{fungsi}' tidak dikenal", state
+    if not isinstance(args, dict):
+        return False, "argumen contract harus berupa objek", state
+    return getattr(PaslonContract("-"), fungsi)(state, args)
 
 
 def _isi_tx(chain):
-    """Urutkan (index_block, tipe, payload, timestamp) dari chain berupa objek Block atau dict."""
+    """Urutkan (index_block, tx) dari chain; block dan tx boleh berupa objek atau dict."""
     for idx, block in enumerate(chain):
-        transaksi = getattr(block, "transaksi", None)
-        if transaksi is None and isinstance(block, dict):
-            transaksi = block.get("transaksi", [])
+        transaksi = block.get("transaksi") if isinstance(block, dict) else getattr(block, "transaksi", None)
         for tx in (transaksi or []):
-            if isinstance(tx, dict):
-                yield idx, tx.get("tipe"), tx.get("payload"), tx.get("timestamp")
-            else:
-                yield idx, getattr(tx, "tipe", None), getattr(tx, "payload", None), getattr(tx, "timestamp", None)
+            yield idx, tx if isinstance(tx, dict) else vars(tx)
 
 
 def _replay(chain):
-    """Jalankan ulang setiap CONTRACT_CALL yang sah.
+    """Jalankan ulang setiap CONTRACT_CALL sah dari pemilik contract pertama yang dideploy.
     Menghasilkan (idx, fungsi, id_paslon, sebelum, sesudah, timestamp, state)."""
     state = []
-    contract = PaslonContract("replay")
-    fungsi_contract = {
-        "tambah_paslon": contract.tambah_paslon,
-        "ubah_paslon": contract.ubah_paslon,
-        "hapus_paslon": contract.hapus_paslon,
-    }
-    for idx, tipe, payload, ts in _isi_tx(chain):
-        if tipe != "CONTRACT_CALL" or not isinstance(payload, dict):
+    kontrak = pemilik = None
+    for idx, tx in _isi_tx(chain):
+        payload = tx.get("payload")
+        if not isinstance(payload, dict):
             continue
-        fungsi = payload.get("fungsi")
-        if fungsi not in fungsi_contract:
+        if tx.get("tipe") == "CONTRACT_DEPLOY" and kontrak is None:
+            kontrak, pemilik = payload.get("contract_address"), tx.get("public_key")
             continue
-        args = payload.get("args", {}) or {}
-        ok, _, state_baru = fungsi_contract[fungsi](state, args)
+        if (tx.get("tipe") != "CONTRACT_CALL" or kontrak is None
+                or payload.get("contract_address") != kontrak or tx.get("public_key") != pemilik):
+            continue
+        fungsi, args = payload.get("fungsi"), payload.get("args")
+        ok, _, state_baru = jalankan_contract(state, fungsi, args)
         if not ok:
             continue
-        pid = state_baru[-1]["id"] if fungsi == "tambah_paslon" else args.get("id")
-        sebelum = next((dict(p) for p in state if p.get("id") == pid), None)
+        pid = state_baru[-1]["id"] if fungsi == "tambah_paslon" else bilangan_positif(args.get("id"))
+        sebelum = next((dict(p) for p in state if p["id"] == pid), None)
         state = state_baru
-        for p in state:
-            if p.get("id") == pid:
-                p["block_number"] = idx
-                sesudah = dict(p)
-        yield idx, fungsi, pid, sebelum, sesudah, ts, state
+        target = next(p for p in state if p["id"] == pid)
+        target["block_number"] = idx
+        yield idx, fungsi, pid, sebelum, dict(target), tx.get("timestamp"), state
 
 
 def state_paslon_dari_chain(chain):
@@ -145,12 +184,3 @@ def riwayat_paslon(chain, pid):
         for idx, fungsi, id_paslon, sebelum, sesudah, ts, _ in _replay(chain)
         if id_paslon == pid
     ]
-
-
-def kontrak_dari_chain(chain):
-    """Alamat contract yang sudah dideploy lewat transaksi CONTRACT_DEPLOY di chain."""
-    return {
-        payload["contract_address"]
-        for _, tipe, payload, _ in _isi_tx(chain)
-        if tipe == "CONTRACT_DEPLOY" and isinstance(payload, dict) and payload.get("contract_address")
-    }

@@ -12,7 +12,7 @@ from pathlib import Path
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from node import Block, Transaksi, alamat_dari_pem
+from node import POLA_NIM, Block, Transaksi, alamat_dari_pem
 
 BATAS_WAKTU_NODE = 300  # mining difficulty tinggi bisa > 1 menit
 NODE_DISCOVERY_PORT = 9999
@@ -22,6 +22,9 @@ DISCOVERED_NODES = set()
 class Dompet:
     def __init__(self, nim):
         self.nim = nim.upper().strip()
+        # NIM dipakai sebagai nama berkas: tolak karakter seperti "../" sebelum menyentuh disk.
+        if not POLA_NIM.fullmatch(self.nim):
+            raise ValueError(f"NIM '{nim}' tidak valid (1 huruf + 7-8 digit)")
         self.berkas = Path(f"dompet_{self.nim}.pem")
 
         if self.berkas.exists():
@@ -89,13 +92,22 @@ def panggil(url, data=None):
             return e.code, {}
 
 
+def angka_kalau_bisa(teks):
+    """Nomor paslon dikirim sebagai angka; teks lain dibiarkan agar ditolak node."""
+    return int(teks) if teks.isascii() and teks.isdigit() else teks
+
+
+def isi_tx(t):
+    return Transaksi.from_dict(t).ringkas()
+
+
 def ringkas(chain):
     for b in chain:
         print(f"  Block {b['index']} | nonce: {str(b['nonce']).ljust(8)} "
               f"| prev: {b['previous_hash'][:12]}... | hash: {b['hash'][:12]}... "
               f"| {len(b['transaksi'])} transaksi")
         for t in b["transaksi"]:
-            print(f"      - {t['voter_id']} -> {t['kandidat']} | sig {t['signature'][:16]}...")
+            print(f"      - {t['voter_id']}: {isi_tx(t)} | sig {t['signature'][:16]}...")
 
 
 def discovery_listener(stop_event):
@@ -165,7 +177,7 @@ def perintah_vote(arg):
     # Mode manual lama: vote <node> <Paslon> <NIM>
     if len(arg) >= 3:
         node_addr = arg[0]
-        kandidat = int(arg[1]) if arg[1].isdigit() else arg[1]  # nomor paslon disimpan sebagai angka
+        kandidat = angka_kalau_bisa(arg[1])
         nim = arg[2]
         dompet = Dompet(nim)
         dompet.tampilkan_identitas()
@@ -181,9 +193,9 @@ def perintah_vote(arg):
 # [CHECKPOINT 3] Transaksi diubah SETELAH ditandatangani -> harus ditolak node
 def perintah_vote_ubah(arg):
     alamat, asli, diubah, nim = arg[:4]
-    tx = Dompet(nim).buat_transaksi(asli)
+    tx = Dompet(nim).buat_transaksi(angka_kalau_bisa(asli))
     print(f"Transaksi ditandatangani untuk '{asli}', lalu isinya diubah menjadi '{diubah}'")
-    tx.kandidat = diubah
+    tx.kandidat = angka_kalau_bisa(diubah)
     kirim_transaksi(alamat, tx)
 
 
@@ -193,7 +205,7 @@ def perintah_pool(arg):
     _, hasil = panggil_node(alamat, "pool")
     print(f"Transaksi pending di {alamat}: {hasil['jumlah']}")
     for tx in hasil["transaksi"]:
-        print(f"  - {tx['voter_id']} -> {tx['kandidat']} | sig {tx['signature'][:16]}...")
+        print(f"  - {tx['voter_id']}: {isi_tx(tx)} | sig {tx['signature'][:16]}...")
 
 
 # [CHECKPOINT 5, 6, 7] Bentuk block, jalankan PoW, lalu terima ke rantai.
@@ -268,7 +280,7 @@ def perintah_palsu(arg):
     terakhir = Block.from_dict(data["chain"][-1])
     target = "0" * data["difficulty"]
 
-    tx = Dompet("F55125999").buat_transaksi("Paslon 1")
+    tx = Dompet("F55125999").buat_transaksi(1)
     block = Block(terakhir.index + 1, [tx], terakhir.hash, nonce=1)
     while block.hash.startswith(target):
         block.nonce += 1
@@ -327,88 +339,90 @@ def menu_interaktif():
             print("14. Uji block palsu")
             print("0. Keluar")
             pilihan = input("Pilih: ").strip()
+            try:
+                if pilihan == "0":
+                    break
+                if pilihan == "1":
+                    target_node = pilih_node_interaktif()
+                    continue
+                if pilihan == "2":
+                    nim = input("NIM: ").strip()
+                    if nim:
+                        dompet = Dompet(nim)
+                        dompet.tampilkan_identitas()
+                    continue
 
-            if pilihan == "0":
-                break
-            if pilihan == "1":
-                target_node = pilih_node_interaktif()
-                continue
-            if pilihan == "2":
-                nim = input("NIM: ").strip()
-                if nim:
-                    dompet = Dompet(nim)
-                    dompet.tampilkan_identitas()
-                continue
+                if not target_node:
+                    print("Pilih node terlebih dahulu (menu 1).")
+                    continue
 
-            if not target_node:
-                print("Pilih node terlebih dahulu (menu 1).")
-                continue
-
-            if pilihan == "3":
-                if dompet:
-                    dompet.tampilkan_identitas()
+                if pilihan == "3":
+                    if dompet:
+                        dompet.tampilkan_identitas()
+                    else:
+                        print("Pilih pemilih terlebih dahulu (menu 2).")
+                elif pilihan == "4":
+                    if not dompet:
+                        print("Pilih pemilih terlebih dahulu (menu 2).")
+                        continue
+                    # ambil daftar paslon dari node
+                    _, data = panggil_node(target_node, "paslon")
+                    paslons = [p for p in (data.get("paslon", []) if isinstance(data, dict) else []) if p.get("aktif", True)]
+                    if not paslons:
+                        print("Belum ada paslon aktif. Tambahkan via web terlebih dahulu.")
+                        continue
+                    print("Daftar paslon:")
+                    for p in paslons:
+                        print(f"  {p.get('nomor')}. {p.get('nama')} (block {p.get('block_number')})")
+                    nomor = input("Nomor paslon: ").strip()
+                    if not nomor:
+                        continue
+                    try:
+                        nomor_int = int(nomor)
+                    except ValueError:
+                        print("Nomor harus angka.")
+                        continue
+                    if not any(p.get("nomor") == nomor_int for p in paslons):
+                        print("Nomor paslon tidak ditemukan.")
+                        continue
+                    tx = dompet.buat_transaksi(nomor_int)
+                    print(f"Transaksi dibuat dan ditandatangani: {tx.voter_id} -> paslon {tx.kandidat}")
+                    print(f"  Signature: {tx.signature[:32]}...")
+                    kirim_transaksi(target_node, tx)
+                elif pilihan == "5":
+                    if not dompet:
+                        print("Pilih pemilih terlebih dahulu (menu 2).")
+                        continue
+                    asli = input("Kandidat asli: ").strip()
+                    diubah = input("Kandidat diubah: ").strip()
+                    if asli and diubah:
+                        perintah_vote_ubah([target_node, asli, diubah, dompet.nim])
+                elif pilihan == "6":
+                    perintah_pool([target_node])
+                elif pilihan == "7":
+                    perintah_mine([target_node])
+                elif pilihan == "8":
+                    perintah_chain([target_node])
+                elif pilihan == "9":
+                    perintah_validate([target_node])
+                elif pilihan == "10":
+                    perintah_tally([target_node])
+                elif pilihan == "11":
+                    idx = input("Index block: ").strip()
+                    if idx:
+                        perintah_tamper([target_node, idx])
+                elif pilihan == "12":
+                    peer = input("Alamat peer (host:port): ").strip()
+                    if peer:
+                        perintah_add_peer([target_node, peer])
+                elif pilihan == "13":
+                    perintah_resolve([target_node])
+                elif pilihan == "14":
+                    perintah_palsu([target_node])
                 else:
-                    print("Pilih pemilih terlebih dahulu (menu 2).")
-            elif pilihan == "4":
-                if not dompet:
-                    print("Pilih pemilih terlebih dahulu (menu 2).")
-                    continue
-                # ambil daftar paslon dari node
-                _, data = panggil_node(target_node, "paslon")
-                paslons = [p for p in (data.get("paslon", []) if isinstance(data, dict) else []) if p.get("aktif", True)]
-                if not paslons:
-                    print("Belum ada paslon aktif. Tambahkan via web terlebih dahulu.")
-                    continue
-                print("Daftar paslon:")
-                for p in paslons:
-                    print(f"  {p.get('nomor')}. {p.get('nama')} (block {p.get('block_number')})")
-                nomor = input("Nomor paslon: ").strip()
-                if not nomor:
-                    continue
-                try:
-                    nomor_int = int(nomor)
-                except ValueError:
-                    print("Nomor harus angka.")
-                    continue
-                if not any(p.get("nomor") == nomor_int for p in paslons):
-                    print("Nomor paslon tidak ditemukan.")
-                    continue
-                tx = dompet.buat_transaksi(nomor_int)
-                print(f"Transaksi dibuat dan ditandatangani: {tx.voter_id} -> paslon {tx.kandidat}")
-                print(f"  Signature: {tx.signature[:32]}...")
-                kirim_transaksi(target_node, tx)
-            elif pilihan == "5":
-                if not dompet:
-                    print("Pilih pemilih terlebih dahulu (menu 2).")
-                    continue
-                asli = input("Kandidat asli: ").strip()
-                diubah = input("Kandidat diubah: ").strip()
-                if asli and diubah:
-                    perintah_vote_ubah([target_node, asli, diubah, dompet.nim])
-            elif pilihan == "6":
-                perintah_pool([target_node])
-            elif pilihan == "7":
-                perintah_mine([target_node])
-            elif pilihan == "8":
-                perintah_chain([target_node])
-            elif pilihan == "9":
-                perintah_validate([target_node])
-            elif pilihan == "10":
-                perintah_tally([target_node])
-            elif pilihan == "11":
-                idx = input("Index block: ").strip()
-                if idx:
-                    perintah_tamper([target_node, idx])
-            elif pilihan == "12":
-                peer = input("Alamat peer (host:port): ").strip()
-                if peer:
-                    perintah_add_peer([target_node, peer])
-            elif pilihan == "13":
-                perintah_resolve([target_node])
-            elif pilihan == "14":
-                perintah_palsu([target_node])
-            else:
-                print("Pilihan tidak valid.")
+                    print("Pilihan tidak valid.")
+            except (OSError, ValueError, KeyError) as e:  # URLError/timeout termasuk OSError
+                print(f"Gagal: {getattr(e, 'reason', e)}")
     finally:
         stop_event.set()
 
@@ -444,6 +458,8 @@ if __name__ == "__main__":
         main()
     except urllib.error.URLError as e:
         print(f"Tidak dapat terhubung ke node ({e.reason}). Pastikan node sudah berjalan.")
+    except ValueError as e:
+        print(f"Input tidak valid: {e}")
     except IndexError:
         print("Argumen kurang.\n")
         print(BANTUAN)

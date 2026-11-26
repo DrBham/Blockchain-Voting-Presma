@@ -1,28 +1,25 @@
 import json
 import urllib.error
-from datetime import datetime
 import urllib.request
-from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app
+from datetime import datetime
 
-from web.models import db, Paslon
+from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
+
 from contract import deploy_contract, riwayat_paslon, state_paslon_dari_chain
+from node import Transaksi
+from web.models import Paslon, db
 
+BATAS_WAKTU_NODE = 10
 BATAS_WAKTU_MINE = 300  # PoW dengan difficulty tinggi bisa butuh > 1 menit
 
 bp = Blueprint("main", __name__)
 
 
-def node_url():
-    return current_app.config["NODE_URL"].rstrip("/")
-
-
-def node_request(method, path, data=None, timeout=10):
-    url = node_url() + path
-    if data is None:
-        req = urllib.request.Request(url, method=method)
-    else:
-        body = json.dumps(data).encode("utf-8")
-        req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method=method)
+def node_request(method, path, data=None, timeout=BATAS_WAKTU_NODE):
+    """Mengembalikan (status_http atau None kalau node tidak terjangkau, isi_json)."""
+    url = current_app.config["NODE_URL"].rstrip("/") + path
+    body = None if data is None else json.dumps(data).encode("utf-8")
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method=method)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.status, json.loads(resp.read().decode("utf-8"))
@@ -35,71 +32,85 @@ def node_request(method, path, data=None, timeout=10):
         return None, {"error": str(e)}
 
 
-def admin_sign_tx(payload, tipe="CONTRACT_CALL"):
-    priv = current_app.config["ADMIN_PRIVATE_KEY"]
-    pub = current_app.config["ADMIN_PUBLIC_KEY"]
-    from node import Transaksi
-    tx = Transaksi("admin", None, pub, tipe=tipe, payload=payload)
-    tx.tanda_tangani(priv)
-    return tx.to_dict()
+def pesan_error(resp):
+    return resp.get("error", "node tidak memberi alasan") if isinstance(resp, dict) else str(resp)
 
 
-def mine():
+def kirim_tx_admin(tipe, payload):
+    """Tanda tangani transaksi dengan kunci admin, kirim ke pool node, lalu tambang (kalau AUTO_MINE).
+    Mengembalikan pesan error, atau None kalau transaksi diterima node."""
+    tx = Transaksi("admin", None, current_app.config["ADMIN_PUBLIC_KEY"], tipe=tipe, payload=payload)
+    tx.tanda_tangani(current_app.config["ADMIN_PRIVATE_KEY"])
+    status, resp = node_request("POST", "/transaksi", tx.to_dict())
+    if status not in (200, 201):
+        return pesan_error(resp)
     if current_app.config["AUTO_MINE"]:
-        node_request("POST", "/mine", {}, timeout=BATAS_WAKTU_MINE)
+        status, resp = node_request("POST", "/mine", {}, timeout=BATAS_WAKTU_MINE)
+        if status != 201:
+            flash(f"Transaksi sudah di pool, tetapi belum ditambang: {pesan_error(resp)}", "warning")
+    return None
 
 
 def alamat_contract_di_chain():
     """Alamat contract dibaca dari chain (lewat node), bukan dari basis data."""
     status, data = node_request("GET", "/contract")
-    kontrak = data.get("kontrak", []) if status == 200 else []
-    return kontrak[-1] if kontrak else None
+    return data.get("alamat") if status == 200 else None
 
 
 def deploy_ke_chain():
-    """Deploy contract = transaksi CONTRACT_DEPLOY bertanda tangan yang ditambang ke block."""
-    addr = deploy_contract(current_app.config["CONTRACT_NAME"])
-    tx = admin_sign_tx({"contract_address": addr, "nama": current_app.config["CONTRACT_NAME"]}, tipe="CONTRACT_DEPLOY")
-    status, resp = node_request("POST", "/transaksi", tx)
-    if status not in (200, 201):
-        return None, resp.get("error") if isinstance(resp, dict) else str(resp)
-    mine()
-    return addr, None
+    """Deploy contract = transaksi CONTRACT_DEPLOY bertanda tangan yang ditambang ke block.
+    Mengembalikan (alamat, error)."""
+    alamat = deploy_contract(current_app.config["CONTRACT_NAME"])
+    error = kirim_tx_admin("CONTRACT_DEPLOY", {"contract_address": alamat, "nama": current_app.config["CONTRACT_NAME"]})
+    return (None, error) if error else (alamat, None)
 
 
-def get_contract_address():
-    addr = alamat_contract_di_chain()
-    if addr:
-        return addr
-    addr, _ = deploy_ke_chain()  # auto-deploy kalau chain belum punya contract
-    return addr
+def panggil_contract(fungsi, args):
+    """Kirim CONTRACT_CALL ke contract aktif (auto-deploy kalau belum ada), lalu sinkronkan SQLite.
+    Aturan bisnis diputuskan contract di node, bukan di sini. Mengembalikan pesan error atau None."""
+    alamat = alamat_contract_di_chain()
+    if not alamat:
+        alamat, error = deploy_ke_chain()
+        if error:
+            return f"auto-deploy contract gagal: {error}"
+    error = kirim_tx_admin("CONTRACT_CALL", {"contract_address": alamat, "fungsi": fungsi, "args": args})
+    if error:
+        return error
+    ok, msg = rebuild_state()
+    if not ok:
+        flash(f"Rebuild gagal: {msg}", "warning")
+    return None
 
 
 def rebuild_state():
-    Paslon.query.delete()
-    db.session.commit()
+    """Isi ulang SQLite dari chain. Chain diambil dulu, jadi data tidak terhapus kalau node mati."""
     status, data = node_request("GET", "/chain")
-    if status != 200 or not data:
-        return False, data.get("error") if isinstance(data, dict) else "node error"
-    chain = data.get("chain", [])
-    state = state_paslon_dari_chain(chain)
-    for p in state:
-        db.session.add(Paslon(
-            id=p.get("id"),
-            nomor=p.get("nomor", 0),
-            nama=p.get("nama", ""),
-            visi=p.get("visi", ""),
-            aktif=p.get("aktif", True),
-            block_number=p.get("block_number", 0),
-        ))
+    if status != 200:
+        return False, pesan_error(data)
+    state = state_paslon_dari_chain(data.get("chain", []))
+    Paslon.query.delete()
+    db.session.add_all(Paslon(
+        id=p["id"],
+        nomor=p["nomor"],
+        nama=p["nama"],
+        visi=p["visi"],
+        aktif=p["aktif"],
+        block_number=p["block_number"],
+    ) for p in state)
     db.session.commit()
     return True, "ok"
+
+
+def format_waktu(timestamp):
+    if isinstance(timestamp, bool) or not isinstance(timestamp, (int, float)):
+        return "-"
+    return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
 
 
 @bp.route("/")
 def index():
     status, data = node_request("GET", "/chain")
-    chain_len = data.get("panjang") if isinstance(data, dict) else None
+    chain_len = data.get("panjang") if status == 200 else None
     paslons = Paslon.query.order_by(Paslon.nomor).all()
     contract = alamat_contract_di_chain() if status == 200 else None
     return render_template("index.html", paslons=paslons, chain_len=chain_len, contract=contract, node_status=status)
@@ -111,110 +122,61 @@ def paslon_list():
     return render_template("paslon_list.html", paslons=paslons)
 
 
+def args_form():
+    return {k: request.form.get(k, "").strip() for k in ("nomor", "nama", "visi")}
+
+
 @bp.route("/paslon/tambah", methods=["GET", "POST"])
 def paslon_tambah():
-    if request.method == "POST":
-        nomor = request.form.get("nomor", "").strip()
-        nama = request.form.get("nama", "").strip()
-        visi = request.form.get("visi", "").strip()
-        if not nomor or not nama:
-            flash("Nomor dan nama wajib diisi.", "danger")
-            return redirect(url_for("main.paslon_tambah"))
-        try:
-            nomor_int = int(nomor)
-        except ValueError:
-            flash("Nomor harus angka.", "danger")
-            return redirect(url_for("main.paslon_tambah"))
-
-        addr = get_contract_address()
-        payload = {"contract_address": addr, "fungsi": "tambah_paslon", "args": {
-            "nomor": nomor_int, "nama": nama, "visi": visi,
-        }}
-        tx = admin_sign_tx(payload)
-        status, resp = node_request("POST", "/transaksi", tx)
-        if status not in (200, 201):
-            flash(f"Gagal: {resp.get('error') if isinstance(resp, dict) else resp}", "danger")
-            return redirect(url_for("main.paslon_tambah"))
-        mine()
-        ok, msg = rebuild_state()
-        if not ok:
-            flash(f"Rebuild gagal: {msg}", "warning")
-        flash("Paslon ditambahkan.", "success")
-        return redirect(url_for("main.paslon_list"))
-    return render_template("paslon_form.html", paslon=None, action="Tambah")
+    if request.method == "GET":
+        return render_template("paslon_form.html", paslon=None, action="Tambah")
+    error = panggil_contract("tambah_paslon", args_form())
+    if error:
+        flash(f"Gagal: {error}", "danger")
+        return redirect(url_for("main.paslon_tambah"))
+    flash("Paslon ditambahkan.", "success")
+    return redirect(url_for("main.paslon_list"))
 
 
 @bp.route("/paslon/<int:pid>/ubah", methods=["GET", "POST"])
 def paslon_ubah(pid):
-    paslon = Paslon.query.get_or_404(pid)
-    if request.method == "POST":
-        nama = request.form.get("nama", "").strip()
-        visi = request.form.get("visi", "").strip()
-        nomor = request.form.get("nomor", "").strip()
-        args = {"id": pid}
-        if nama:
-            args["nama"] = nama
-        if visi:
-            args["visi"] = visi
-        if nomor:
-            try:
-                args["nomor"] = int(nomor)
-            except ValueError:
-                flash("Nomor harus angka.", "danger")
-                return redirect(url_for("main.paslon_ubah", pid=pid))
-
-        addr = get_contract_address()
-        payload = {"contract_address": addr, "fungsi": "ubah_paslon", "args": args}
-        tx = admin_sign_tx(payload)
-        status, resp = node_request("POST", "/transaksi", tx)
-        if status not in (200, 201):
-            flash(f"Gagal: {resp.get('error') if isinstance(resp, dict) else resp}", "danger")
-            return redirect(url_for("main.paslon_ubah", pid=pid))
-        mine()
-        ok, msg = rebuild_state()
-        if not ok:
-            flash(f"Rebuild gagal: {msg}", "warning")
-        flash("Paslon diubah.", "success")
-        return redirect(url_for("main.paslon_list"))
-    return render_template("paslon_form.html", paslon=paslon, action="Ubah")
+    paslon = db.get_or_404(Paslon, pid)
+    if request.method == "GET":
+        return render_template("paslon_form.html", paslon=paslon, action="Ubah")
+    error = panggil_contract("ubah_paslon", {"id": pid, **args_form()})
+    if error:
+        flash(f"Gagal: {error}", "danger")
+        return redirect(url_for("main.paslon_ubah", pid=pid))
+    flash("Paslon diubah.", "success")
+    return redirect(url_for("main.paslon_list"))
 
 
 @bp.route("/paslon/<int:pid>/hapus", methods=["POST"])
 def paslon_hapus(pid):
-    addr = get_contract_address()
-    payload = {"contract_address": addr, "fungsi": "hapus_paslon", "args": {"id": pid}}
-    tx = admin_sign_tx(payload)
-    status, resp = node_request("POST", "/transaksi", tx)
-    if status not in (200, 201):
-        flash(f"Gagal: {resp.get('error') if isinstance(resp, dict) else resp}", "danger")
-        return redirect(url_for("main.paslon_list"))
-    mine()
-    ok, msg = rebuild_state()
-    if not ok:
-        flash(f"Rebuild gagal: {msg}", "warning")
-    flash("Paslon dinonaktifkan (soft delete).", "success")
+    error = panggil_contract("hapus_paslon", {"id": pid})
+    flash(f"Gagal: {error}" if error else "Paslon dinonaktifkan (soft delete).", "danger" if error else "success")
     return redirect(url_for("main.paslon_list"))
 
 
 @bp.route("/paslon/<int:pid>/riwayat")
 def paslon_riwayat(pid):
     status, data = node_request("GET", "/chain")
-    if status != 200 or not data:
-        flash("Gagal mengambil chain.", "danger")
+    if status != 200:
+        flash(f"Gagal mengambil chain: {pesan_error(data)}", "danger")
         return redirect(url_for("main.paslon_list"))
     riwayat = riwayat_paslon(data.get("chain", []), pid)
     for r in riwayat:
-        r["waktu"] = datetime.fromtimestamp(r["timestamp"]).strftime("%Y-%m-%d %H:%M:%S") if r["timestamp"] else "-"
+        r["waktu"] = format_waktu(r["timestamp"])
     return render_template("paslon_riwayat.html", pid=pid, riwayat=riwayat)
 
 
 @bp.route("/contract/deploy", methods=["POST"])
 def contract_deploy():
-    addr, err = deploy_ke_chain()
-    if addr:
-        flash(f"Contract dideploy ke chain di alamat {addr}", "success")
+    alamat, error = deploy_ke_chain()
+    if error:
+        flash(f"Deploy gagal: {error}", "danger")
     else:
-        flash(f"Deploy gagal: {err}", "danger")
+        flash(f"Contract dideploy ke chain di alamat {alamat}", "success")
     return redirect(url_for("main.index"))
 
 
@@ -236,7 +198,7 @@ def state_rebuild():
 
 @bp.route("/node/status")
 def node_status():
-    s1, chain_data = node_request("GET", "/chain")
-    s2, peers_data = node_request("GET", "/peers")
-    s3, tally_data = node_request("GET", "/tally")
+    _, chain_data = node_request("GET", "/chain")
+    _, peers_data = node_request("GET", "/peers")
+    _, tally_data = node_request("GET", "/tally")
     return render_template("node_status.html", chain=chain_data, peers=peers_data, tally=tally_data)

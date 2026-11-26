@@ -12,5 +12,5 @@ class Paslon(db.Model):
     visi = db.Column(db.String(500), default="")
     aktif = db.Column(db.Boolean, default=True)
     block_number = db.Column(db.Integer, default=0)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.now)
 

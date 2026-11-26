@@ -2,6 +2,7 @@
 {% block content %}
 <h2>{{ action }} Paslon</h2>
 <form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="mb-3">
     <label class="form-label">Nomor</label>
     <input name="nomor" class="form-control" value="{{ paslon.nomor if paslon else '' }}">

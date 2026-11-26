@@ -4,6 +4,6 @@ __pycache__/
 # Private key pemilih harus tetap tersimpan lokal.
 dompet_*.pem
 docs/
-tests/
 # Laporan dikumpulkan melalui LMS, bukan repository kode.
 LAPORAN PROJECT BASED KELOMPOK 4.pdf
+web_state.db
