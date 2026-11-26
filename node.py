@@ -450,7 +450,7 @@ class Blockchain:
                 return False, alasan, False
             log("Signature VALID, transaksi sesuai aturan")
 
-            if self.sudah_memilih(tx.voter_id):
+            if tx.tipe == "VOTE" and self.sudah_memilih(tx.voter_id):
                 alasan = f"NIM '{tx.voter_id}' sudah menggunakan hak pilihnya!"
                 log(f"DITOLAK: {alasan}")
                 return False, alasan, False
