@@ -614,7 +614,7 @@ class Node:
 
     # [FITUR WAJIB: Longest-chain rule]
     # [CHECKPOINT 10] Sinkronisasi: node yang sempat mati memperoleh rantai terpanjang setelah resolve
-    def resolve(self):
+    def resolve(self, verbose=True):
         """Longest-chain rule: ambil rantai terpanjang yang VALID dari peer."""
         bc = self.blockchain
         terpanjang = None
@@ -627,14 +627,17 @@ class Node:
                 if not ok:
                     log(f" !! rantai dari {peer} ditolak (block {rusak}: {alasan})")
                     continue
-                log(f" -> {peer} punya rantai {len(rantai_peer)} block (valid)")
+                if verbose:
+                    log(f" -> {peer} punya rantai {len(rantai_peer)} block (valid)")
                 if len(rantai_peer) > panjang_maks:
                     terpanjang, panjang_maks = rantai_peer, len(rantai_peer)
             except Exception as e:
-                log(f" !! gagal menghubungi {peer} ({e})")
+                if verbose:
+                    log(f" !! gagal menghubungi {peer} ({e})")
 
         if terpanjang is None:
-            log(f"RESOLVE: rantai lokal ({len(bc.chain)} block) sudah yang terpanjang")
+            if verbose:
+                log(f"RESOLVE: rantai lokal ({len(bc.chain)} block) sudah yang terpanjang")
             return False
 
         with bc.lock:
@@ -718,7 +721,7 @@ def thread_resolver(stop_event):
     while not stop_event.is_set():
         if NODE is not None:
             try:
-                NODE.resolve()
+                NODE.resolve(verbose=False)
             except Exception as e:
                 log(f"resolve background error: {e}")
         stop_event.wait(30)
