@@ -88,6 +88,30 @@ Buka `http://localhost:5000`. Fitur: dashboard, CRUD Paslon, deploy smart contra
 
 Node interaktif juga bisa dipakai; sesuaikan `NODE_URL` dengan port yang tampil.
 
+## 7. Cara Penggunaan Terintegrasi (Node + Web + Client)
+
+1. Jalankan node (manual atau interaktif):
+   ```bash
+   python node.py 5001
+   ```
+2. Jalankan web app:
+   ```bash
+   set NODE_URL=http://localhost:5001
+   set AUTO_MINE=true
+   python -m flask --app web.app run --port 5000
+   ```
+   Buka `http://localhost:5000`, tambahkan Paslon (mis. nomor 7, nama King Dimss).
+3. Jalankan client:
+   ```bash
+   python client.py
+   ```
+   - Pilih node (auto-discover).
+   - Pilih/ganti pemilih (NIM).
+   - Menu 4: pilih nomor paslon dari daftar (sesuai web).
+   - Menu 7: mine.
+   - Menu 10: tally (nama paslon + jumlah suara).
+4. Uji checkpoint lain via menu client (validate, tamper, resolve, palsu) dan web (verify, rebuild).
+
 ## 5. Catatan
 
 - Discovery memakai UDP broadcast; firewall/AP isolation dapat memblokirnya. Gunakan "Tambah peer manual" sebagai fallback.
