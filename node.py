@@ -19,7 +19,6 @@ from contract import jalankan_contract, state_paslon_dari_chain
 PORT = 0
 IFACE_IP = "127.0.0.1"
 
-ANGKATAN_VALID = {"23", "24", "25"}  # Angkatan 2023 (Sem 7), 2024 (Sem 5), 2025 (Sem 3)
 FAKULTAS_UNTAD = {"A", "B", "C", "D", "E", "F", "G", "K", "L", "N", "P"}
 POLA_NIM = re.compile(r"[A-Z]\d{7,8}")
 POLA_ALAMAT_CONTRACT = re.compile(r"[0-9a-f]{40}")
@@ -41,6 +40,9 @@ def validasi_nim_untad(nim):
     """
     Format NIM UNTAD: [Kode Fakultas][3 Digit Prodi][2 Digit Tahun][3 Digit No Urut]
     Contoh: F55125001 -> Fakultas 'F', Angkatan '25'
+    Semua angkatan boleh memilih selama mahasiswa aktif. Batas semester 3-7
+    (Peraturan Rektor Untad No. 1/2021 Pasal 20 ayat 1 huruf a) adalah syarat
+    calon ketua ormawa/Presma, bukan syarat pemilih.
     """
     nim = nim.upper().strip()
     if len(nim) < 8:
@@ -49,10 +51,6 @@ def validasi_nim_untad(nim):
     kode_fakultas = nim[0]
     if kode_fakultas not in FAKULTAS_UNTAD:
         return False, f"Kode Fakultas '{kode_fakultas}' tidak terdaftar di UNTAD!"
-
-    angkatan = nim[4:6] if len(nim) >= 9 else nim[1:3]
-    if angkatan not in ANGKATAN_VALID:
-        return False, f"Angkatan '20{angkatan}' tidak memenuhi syarat (Hanya Semester 3-7 / Angkatan 2023-2025)!"
 
     return True, "Valid"
 
@@ -663,12 +661,20 @@ class Node:
                 log(f" !! {label} ke {peer} tidak diterima ({e})")
 
     def peer_duplikat(self, peer):
-        """Peer lokal yang sama dengan alamat berbeda (mis. 127.0.0.1:5001 vs 192.168.x:5001 di mesin ini)."""
-        host, _, port = peer.rpartition(":")
+        """Node yang sama dengan alamat berbeda: nama host vs IP (node2:5000 vs 172.20.0.4:5000),
+        atau dua alamat mesin ini sendiri (127.0.0.1:5001 vs 192.168.x:5001)."""
         lokal = ip_milik_sendiri()
-        return host in lokal and any(
-            p.rpartition(":")[2] == port and p.rpartition(":")[0] in lokal for p in self.peers
-        )
+
+        def kunci(alamat):
+            host, _, port = alamat.rpartition(":")
+            try:
+                host = socket.gethostbyname(host)
+            except OSError:
+                pass
+            return ("lokal" if host in lokal else host), port
+
+        target = kunci(peer)
+        return any(kunci(p) == target for p in self.peers)
 
     def tambah_peer(self, peer, timbal_balik=True):
         if not peer_valid(peer) or peer in self.peers or self.peer_duplikat(peer):

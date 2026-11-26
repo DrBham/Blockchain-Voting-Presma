@@ -109,7 +109,7 @@ python client.py mine 127.0.0.1:5001                  # mine the pool into a blo
 python client.py tally 127.0.0.1:5001                 # count votes recorded on the chain
 ```
 
-The first `vote` for a NIM creates its key pair in `dompet_<NIM>.pem` next to where you run the command. The private key never leaves that file.
+For a full run from identity to tamper detection, follow the [CLI walkthrough](#cli-walkthrough). The first `vote` for a NIM creates its key pair in `dompet_<NIM>.pem` next to where you run the command. The private key never leaves that file.
 
 <details>
 <summary>All client commands</summary>
@@ -129,7 +129,7 @@ The first `vote` for a NIM creates its key pair in `dompet_<NIM>.pem` next to wh
 | `resolve <node>` | Apply the longest valid chain rule |
 | `palsu <node>` | Send a block without valid proof of work; the node must reject it |
 
-`<node>` is `host:port` without `http://`. A NIM is one capital letter and 7–8 digits, for example `F55125001`; the prototype accepts intake years 2023–2025.
+`<node>` is `host:port` without `http://`. A NIM is one capital letter and 7–8 digits, for example `F55125001`; every intake year may vote. The semester 3–7 limit in Untad Rector Regulation No. 1/2021 applies to candidates, not voters.
 
 </details>
 
@@ -237,36 +237,246 @@ The assignments list checkpoints to show live. Project Based 2:
 | 11 | Node sync | Stop node 5002, add data, restart it, run `python client.py resolve 127.0.0.1:5002` |
 | 12 | Reject invalid block | `python client.py palsu 127.0.0.1:5001` returns HTTP 409 |
 
-<details>
-<summary>Project Based 1 checkpoints (command line)</summary>
+Project Based 1 checkpoints run from the command line: see the [CLI walkthrough](#cli-walkthrough).
 
-| # | Checkpoint | Command |
+<a id="cli-walkthrough"></a>
+
+## 🖥️ CLI walkthrough
+
+The Project Based 1 checkpoints run from the command line. Pick one setup:
+
+- [Option A: one computer, three Docker nodes](#option-a-one-computer-three-docker-nodes)
+- [Option B: two laptops, peer to peer](#option-b-two-laptops-peer-to-peer)
+
+Both follow the same story: create an identity, vote, mine, check the chain, then break things on purpose and watch the network catch it.
+
+> [!IMPORTANT]
+> A vote is accepted only for an active candidate pair, and candidate pairs are created through the contract. Add them once from the web app (step 2 in each option) before voting.
+
+### Option A: one computer, three Docker nodes
+
+Needs Docker Desktop (running) and the Quick start step 1 install for the client and web app. Containers listen on port 5000 inside and are published on the host as `127.0.0.1:5001`, `5002`, and `5003`.
+
+**1. Start the network**
+
+```powershell
+docker compose up --build -d
+docker compose logs -f
+```
+
+Keep the log terminal open: every checkpoint below prints there. Open a second terminal in the repo folder with the virtual environment activated for the next steps.
+
+**2. Deploy the contract and add two candidate pairs**
+
+```powershell
+$env:NODE_URL = "http://127.0.0.1:5001"
+python -m flask --app web.app run --port 5000
+```
+
+Open <http://127.0.0.1:5000>, click **Deploy Contract**, then **Tambah Paslon** twice: number `1` and number `2`. That mines blocks 1 to 3. Leave the web app running and open a third terminal (virtual environment activated) for the client.
+
+**3. Checkpoint 1: create a voter identity**
+
+```powershell
+python client.py identitas F55125001
+```
+
+```text
+Identitas voter F55125001 (dibuat)
+  Alamat     : 1278ab2f359d2926fb08cb34d1e8fe8cbe5f14f8
+  Public key : MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKC...
+  Private key: disimpan lokal di 'dompet_F55125001.pem' (tidak dikirim ke node)
+```
+
+**4. Checkpoints 2 to 4: signed votes, rejected votes, and the pool**
+
+```powershell
+python client.py vote 127.0.0.1:5001 1 F55125001
+python client.py vote 127.0.0.1:5001 2 F55125002
+python client.py vote_ubah 127.0.0.1:5001 1 2 F55125003
+python client.py vote 127.0.0.1:5002 2 F55125001
+python client.py pool 127.0.0.1:5003
+```
+
+Expected output, trimmed to the result lines:
+
+```text
+Transaksi DITERIMA node: transaksi diterima ke pool (pending di pool: 2)
+Transaksi DITOLAK node (HTTP 400): signature tidak cocok (isi transaksi diubah setelah ditandatangani atau kunci salah)
+Transaksi DITOLAK node (HTTP 400): NIM 'F55125001' sudah menggunakan hak pilihnya!
+Transaksi pending di 127.0.0.1:5003: 2
+  - F55125001: vote paslon 1 | sig 5e6f81229512fddb...
+  - F55125002: vote paslon 2 | sig 6ea45acc092a8fa9...
+```
+
+`vote_ubah` changes the vote after signing, so the signature no longer matches. The second vote from `F55125001` is refused even though it went to a different node. The pool on node 3 already holds both votes because node 1 broadcast them.
+
+**5. Checkpoints 5 to 7: build a block, run proof of work, add it to the chain**
+
+```powershell
+python client.py mine 127.0.0.1:5001
+```
+
+```text
+block berhasil ditambang dan ditambahkan: Block 4 (nonce 27374, hash 0000a15374e4f5a5f036...)
+```
+
+The log terminal shows `BLOCK CANDIDATE` with the transactions and previous hash, then the nonce attempts, hash, and mining time, then `BLOCK DITERIMA RANTAI` with the pool back to 0.
+
+**6. Checkpoints 8 and 10: every node has the same valid chain**
+
+```powershell
+python client.py chain 127.0.0.1:5003
+python client.py validate 127.0.0.1:5002
+python client.py tally 127.0.0.1:5003
+```
+
+```text
+Rantai VALID untuk seluruh 5 block
+Total Suara Masuk: 2
+```
+
+**7. Checkpoint 10: a node that was down catches up**
+
+```powershell
+docker compose stop node3
+python client.py vote 127.0.0.1:5001 1 F55125004
+python client.py mine 127.0.0.1:5001
+docker compose start node3
+python client.py chain 127.0.0.1:5003
+```
+
+Node 3 restarts from the genesis block, asks its peers at startup, and logs `RESOLVE: rantai diganti dengan rantai terpanjang (6 block)`. Run `python client.py resolve 127.0.0.1:5003` to trigger the same check by hand; it answers `Rantai tidak berubah` once the node has caught up.
+
+**8. Checkpoint 11: a block without valid proof of work is rejected**
+
+```powershell
+python client.py palsu 127.0.0.1:5001
+```
+
+```text
+Block palsu DITOLAK oleh node. Status HTTP: 409
+Alasan: proof of work tidak valid (hash tidak diawali 0000)
+```
+
+**9. Checkpoint 9: tamper with an old block, then repair it**
+
+`tamper` only accepts requests from the node's own machine, so run it inside the container:
+
+```powershell
+docker compose exec node2 python client.py tamper 127.0.0.1:5000 4
+python client.py validate 127.0.0.1:5002
+python client.py resolve 127.0.0.1:5002
+python client.py validate 127.0.0.1:5002
+```
+
+```text
+data di block 4 diubah menjadi 'vote paslon 2'
+Rantai TIDAK VALID. Block pertama yang rusak: index 4
+Alasan: hash tidak cocok dengan isi block (data berubah)
+Rantai diganti. Panjang sekarang: 6 block
+Rantai VALID untuk seluruh 6 block
+```
+
+**10. Stop everything**
+
+Press `Ctrl+C` in the web app and log terminals, then:
+
+```powershell
+docker compose down
+```
+
+The chain lives in memory, so the next `docker compose up` starts from genesis again.
+
+### Option B: two laptops, peer to peer
+
+The same story across two machines. Replace `<LAPTOP_A_IP>` and `<LAPTOP_B_IP>` with the IPv4 addresses from `ipconfig`.
+
+| Laptop | Runs | Node address |
 | --- | --- | --- |
-| 1 | Sender identity | `python client.py identitas F55125001` |
-| 2–4 | Signed vote enters the pool | `python client.py vote 127.0.0.1:5001 1 F55125001`, then `pool` |
-| 3 | Edited vote rejected | `python client.py vote_ubah 127.0.0.1:5001 1 2 F55125002` |
-| 5–7 | Candidate block, PoW, block accepted | `python client.py mine 127.0.0.1:5001` |
-| 8 | Valid chain | `python client.py validate 127.0.0.1:5001` |
-| 9 | Tamper detection | `tamper 127.0.0.1:5001 1`, then `validate` |
-| 10 | Broadcast and resolve | Node logs show send and receive; `resolve` on a restarted node |
-| 11 | Invalid block rejected | `python client.py palsu 127.0.0.1:5001` |
+| A | Node on port 5001, web app, client | `<LAPTOP_A_IP>:5001` |
+| B | Node on port 5002, client | `<LAPTOP_B_IP>:5002` |
 
-A vote needs an active candidate pair, so add one from the web app first.
+**1. Prepare both laptops**
 
-</details>
+Do Quick start step 1 on both. Connect them to the same network; a phone hotspot is the most reliable, because campus Wi-Fi often blocks traffic between devices. Then check they can reach each other:
 
-> [!NOTE]
-> `tamper` only works from the same computer as the node, so nobody else on the network can corrupt it. A node whose own chain is broken takes the valid chain from a peer on the next `resolve`.
+```powershell
+ipconfig
+ping <LAPTOP_B_IP>   # from Laptop A
+ping <LAPTOP_A_IP>   # from Laptop B
+```
 
-### Two laptops
+**2. Open the node port in Windows Defender Firewall**
 
-1. Connect both laptops to the same network (a phone hotspot works best; campus Wi-Fi often blocks device-to-device traffic).
-2. Run `ipconfig` on each laptop and note its IPv4 address.
-3. Allow the node port (and UDP 9999 for discovery) through Windows Defender Firewall.
-4. Laptop A: `python node.py 5001 <LAPTOP_B_IP>:5001`. Laptop B: `python node.py 5001 <LAPTOP_A_IP>:5001`.
-5. Repeat checkpoints 11 and 12 across the laptops.
+In PowerShell as Administrator:
 
-Running `python node.py` with no arguments on both laptops lets them find each other without typing addresses, if the network allows UDP broadcast.
+```powershell
+New-NetFirewallRule -DisplayName "Presma node 5001" -Direction Inbound -Protocol TCP -LocalPort 5001 -Action Allow   # Laptop A
+New-NetFirewallRule -DisplayName "Presma node 5002" -Direction Inbound -Protocol TCP -LocalPort 5002 -Action Allow   # Laptop B
+```
+
+If Windows asks whether Python may use the network, allow it on **Private** networks.
+
+**3. Start one node on each laptop**
+
+```powershell
+python node.py 5001 <LAPTOP_B_IP>:5002   # Laptop A
+python node.py 5002 <LAPTOP_A_IP>:5001   # Laptop B
+```
+
+Use the LAN address of the other laptop, never `127.0.0.1`. Both nodes print the same `Genesis` line. Confirm the ports are open:
+
+```powershell
+Test-NetConnection <LAPTOP_B_IP> -Port 5002   # from Laptop A, expect TcpTestSucceeded : True
+Test-NetConnection <LAPTOP_A_IP> -Port 5001   # from Laptop B
+```
+
+**4. Deploy the contract and add candidate pairs on Laptop A**
+
+```powershell
+$env:NODE_URL = "http://127.0.0.1:5001"
+python -m flask --app web.app run --port 5000
+```
+
+In <http://127.0.0.1:5000>, click **Deploy Contract** and add candidate pairs `1` and `2`. Laptop B's node log shows each block arriving with `DITERIMA dari peer`.
+
+**5. Run the checkpoints across the two nodes**
+
+From a client terminal on either laptop:
+
+| Checkpoint | Command | What proves it |
+| --- | --- | --- |
+| 1 | `python client.py identitas F55125001` | Address and key file printed |
+| 2–3 | `python client.py vote <LAPTOP_A_IP>:5001 1 F55125001` | Accepted; Laptop B's log shows the broadcast |
+| 3 | `python client.py vote_ubah <LAPTOP_A_IP>:5001 1 2 F55125002` | Rejected: signature does not match |
+| 4 | `python client.py pool <LAPTOP_B_IP>:5002` | Vote is pending on Laptop B too |
+| 5–7 | `python client.py mine <LAPTOP_A_IP>:5001` | Laptop A mines; Laptop B logs `block 4 DITERIMA dari peer` |
+| 8 | `python client.py validate <LAPTOP_B_IP>:5002` | `Rantai VALID` on Laptop B |
+| 11 | `python client.py palsu <LAPTOP_B_IP>:5002` | HTTP 409 from Laptop B |
+
+**6. Checkpoint 10: Laptop B goes offline and catches up**
+
+1. Press `Ctrl+C` on Laptop B's node.
+2. On Laptop A: `python client.py vote <LAPTOP_A_IP>:5001 2 F55125003`, then `python client.py mine <LAPTOP_A_IP>:5001`.
+3. On Laptop B: start the node again with the same command as step 3.
+4. Run `python client.py chain <LAPTOP_B_IP>:5002`. Laptop B fetched the longer chain from Laptop A at startup; `resolve` forces the same check.
+
+**7. Checkpoint 9: tamper on Laptop B only**
+
+Run on Laptop B, because `tamper` refuses requests from other machines:
+
+```powershell
+python client.py tamper 127.0.0.1:5002 4
+python client.py validate 127.0.0.1:5002
+python client.py validate <LAPTOP_A_IP>:5001
+python client.py resolve 127.0.0.1:5002
+```
+
+Laptop B reports index 4 as broken while Laptop A stays valid; `resolve` replaces Laptop B's broken chain with Laptop A's.
+
+> [!TIP]
+> Running `python node.py` with no arguments on both laptops picks the network interface and a free port, then finds the other node over UDP port 9999. Allow UDP 9999 in the firewall too, or use the node menu's manual peer option if the network blocks broadcast.
 
 ## 🗂️ Project structure
 
@@ -298,17 +508,10 @@ OK
 
 The suite covers contract rules and input edge cases, replay of the chain into state and history, transaction rules (owner-only calls, replay attack, double vote, wrong types), peer discovery, and mining cancellation.
 
-<details>
-<summary>Docker Compose (optional)</summary>
-
-`docker compose up --build` starts three nodes reachable from the host at `127.0.0.1:5001`, `5002`, and `5003`. The containers run only the node; run `client.py` and the web app on the host. The `tamper` command is refused from the host because it is not the container's own machine.
-
-</details>
-
 ## ⚠️ Limitations
 
 - The chain is kept in memory. Restarting a node starts from genesis; it recovers only if a peer still has the chain.
-- The NIM check covers format and intake year, not whether the student exists or owns the key.
+- The NIM check covers format and faculty code only. It does not check active-student status or whether the student owns the key; a real Pemira would load the voter roll (DPT) from the university system.
 - Votes are stored in plain text on the chain; there is no ballot secrecy.
 - Private keys are unencrypted PEM files.
 - The web app has no login; anyone who can open it can change candidate data.

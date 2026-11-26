@@ -79,6 +79,14 @@ class TestKonteksRantai(unittest.TestCase):
             ok, _ = k.terapkan(self._tx(pemilih, "VOTE", voter_id=voter_id, kandidat=kandidat))
             self.assertFalse(ok, (voter_id, kandidat))
 
+    def test_semua_angkatan_boleh_memilih(self):
+        # batas semester 3-7 hanya untuk calon, bukan pemilih
+        k = self._konteks_dengan_paslon()
+        pemilih = buat_kunci()
+        for nim in ("F55119001", "A12122001", "F55126001"):
+            self.assertTrue(k.terapkan(self._tx(pemilih, "VOTE", voter_id=nim, kandidat=1))[0], nim)
+        self.assertFalse(k.terapkan(self._tx(pemilih, "VOTE", voter_id="Z55125001", kandidat=1))[0])
+
     def test_tipe_tidak_dikenal_ditolak(self):
         ok, alasan = KonteksRantai().terapkan(self._tx(self.admin, "MINT", {}))
         self.assertFalse(ok)
