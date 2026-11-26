@@ -531,4 +531,4 @@ Kelompok 4, S1 Teknik Informatika, Fakultas Teknik, Universitas Tadulako. Lectur
 
 ## 📄 License
 
-No license file yet, so all rights stay with the authors. Ask before reusing the code.
+[MIT](LICENSE). Built as coursework for Teknologi Blockchain at Universitas Tadulako; anyone may study, reuse, and extend it.
