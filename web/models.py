@@ -14,10 +14,3 @@ class Paslon(db.Model):
     block_number = db.Column(db.Integer, default=0)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-
-class ContractMeta(db.Model):
-    __tablename__ = "contract_meta"
-    id = db.Column(db.Integer, primary_key=True)
-    address = db.Column(db.String(64), nullable=False)
-    name = db.Column(db.String(120), nullable=False)
-    deployed_at = db.Column(db.DateTime, default=datetime.utcnow)

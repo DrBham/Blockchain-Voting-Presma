@@ -1,5 +1,5 @@
 import unittest
-from contract import PaslonContract, deploy_contract, state_paslon_dari_chain
+from contract import PaslonContract, deploy_contract, kontrak_dari_chain, riwayat_paslon, state_paslon_dari_chain
 
 
 class TestContract(unittest.TestCase):
@@ -67,6 +67,19 @@ class TestContract(unittest.TestCase):
         self.assertEqual(len(state), 1)
         self.assertEqual(state[0]["nama"], "A2")
         self.assertFalse(state[0]["aktif"])
+
+    def test_riwayat_nilai_lama_baru_dan_kontrak(self):
+        chain = [
+            {"transaksi": [{"tipe": "CONTRACT_DEPLOY", "payload": {"contract_address": "c1", "nama": "PaslonContract"}}]},
+            {"transaksi": [{"tipe": "CONTRACT_CALL", "timestamp": 1, "payload": {"fungsi": "tambah_paslon", "args": {"nomor": 7, "nama": "A"}}}]},
+            {"transaksi": [{"tipe": "CONTRACT_CALL", "timestamp": 2, "payload": {"fungsi": "ubah_paslon", "args": {"id": 1, "nama": "B"}}}]},
+        ]
+        riwayat = riwayat_paslon(chain, 1)
+        self.assertEqual([r["block"] for r in riwayat], [1, 2])
+        self.assertIsNone(riwayat[0]["sebelum"])
+        self.assertEqual((riwayat[1]["sebelum"]["nama"], riwayat[1]["sesudah"]["nama"]), ("A", "B"))
+        self.assertEqual(riwayat_paslon(chain, 7), [])  # nomor bukan id
+        self.assertEqual(kontrak_dari_chain(chain), {"c1"})
 
 
 if __name__ == "__main__":

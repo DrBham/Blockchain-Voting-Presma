@@ -2,7 +2,7 @@
 {% block content %}
 <h2>Dashboard</h2>
 <p>Panjang chain: {{ chain_len }}</p>
-<p>Contract: {{ contract.address if contract else 'belum deploy' }}</p>
+<p>Contract: <code>{{ contract or "belum deploy" }}</code> (dibaca dari chain)</p>
 <form method="post" action="/contract/deploy" class="mb-3">
   <button class="btn btn-primary btn-sm">Deploy Contract</button>
 </form>

@@ -1,11 +1,13 @@
 import json
 import urllib.error
+from datetime import datetime
 import urllib.request
 from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app
 
-from web.models import db, Paslon, ContractMeta
-from web.config import CONTRACT_NAME
-from contract import deploy_contract, state_paslon_dari_chain
+from web.models import db, Paslon
+from contract import deploy_contract, riwayat_paslon, state_paslon_dari_chain
+
+BATAS_WAKTU_MINE = 300  # PoW dengan difficulty tinggi bisa butuh > 1 menit
 
 bp = Blueprint("main", __name__)
 
@@ -33,23 +35,43 @@ def node_request(method, path, data=None, timeout=10):
         return None, {"error": str(e)}
 
 
-def admin_sign_tx(payload):
+def admin_sign_tx(payload, tipe="CONTRACT_CALL"):
     priv = current_app.config["ADMIN_PRIVATE_KEY"]
     pub = current_app.config["ADMIN_PUBLIC_KEY"]
     from node import Transaksi
-    tx = Transaksi("admin", None, pub, tipe="CONTRACT_CALL", payload=payload)
+    tx = Transaksi("admin", None, pub, tipe=tipe, payload=payload)
     tx.tanda_tangani(priv)
     return tx.to_dict()
 
 
+def mine():
+    if current_app.config["AUTO_MINE"]:
+        node_request("POST", "/mine", {}, timeout=BATAS_WAKTU_MINE)
+
+
+def alamat_contract_di_chain():
+    """Alamat contract dibaca dari chain (lewat node), bukan dari basis data."""
+    status, data = node_request("GET", "/contract")
+    kontrak = data.get("kontrak", []) if status == 200 else []
+    return kontrak[-1] if kontrak else None
+
+
+def deploy_ke_chain():
+    """Deploy contract = transaksi CONTRACT_DEPLOY bertanda tangan yang ditambang ke block."""
+    addr = deploy_contract(current_app.config["CONTRACT_NAME"])
+    tx = admin_sign_tx({"contract_address": addr, "nama": current_app.config["CONTRACT_NAME"]}, tipe="CONTRACT_DEPLOY")
+    status, resp = node_request("POST", "/transaksi", tx)
+    if status not in (200, 201):
+        return None, resp.get("error") if isinstance(resp, dict) else str(resp)
+    mine()
+    return addr, None
+
+
 def get_contract_address():
-    meta = ContractMeta.query.order_by(ContractMeta.id.desc()).first()
-    if meta:
-        return meta.address
-    # auto-deploy if none
-    addr = deploy_contract(CONTRACT_NAME)
-    db.session.add(ContractMeta(address=addr, name=CONTRACT_NAME))
-    db.session.commit()
+    addr = alamat_contract_di_chain()
+    if addr:
+        return addr
+    addr, _ = deploy_ke_chain()  # auto-deploy kalau chain belum punya contract
     return addr
 
 
@@ -79,8 +101,8 @@ def index():
     status, data = node_request("GET", "/chain")
     chain_len = data.get("panjang") if isinstance(data, dict) else None
     paslons = Paslon.query.order_by(Paslon.nomor).all()
-    meta = ContractMeta.query.order_by(ContractMeta.id.desc()).first()
-    return render_template("index.html", paslons=paslons, chain_len=chain_len, contract=meta, node_status=status)
+    contract = alamat_contract_di_chain() if status == 200 else None
+    return render_template("index.html", paslons=paslons, chain_len=chain_len, contract=contract, node_status=status)
 
 
 @bp.route("/paslon")
@@ -113,8 +135,7 @@ def paslon_tambah():
         if status not in (200, 201):
             flash(f"Gagal: {resp.get('error') if isinstance(resp, dict) else resp}", "danger")
             return redirect(url_for("main.paslon_tambah"))
-        if current_app.config["AUTO_MINE"]:
-            node_request("POST", "/mine", {})
+        mine()
         ok, msg = rebuild_state()
         if not ok:
             flash(f"Rebuild gagal: {msg}", "warning")
@@ -149,8 +170,7 @@ def paslon_ubah(pid):
         if status not in (200, 201):
             flash(f"Gagal: {resp.get('error') if isinstance(resp, dict) else resp}", "danger")
             return redirect(url_for("main.paslon_ubah", pid=pid))
-        if current_app.config["AUTO_MINE"]:
-            node_request("POST", "/mine", {})
+        mine()
         ok, msg = rebuild_state()
         if not ok:
             flash(f"Rebuild gagal: {msg}", "warning")
@@ -168,8 +188,7 @@ def paslon_hapus(pid):
     if status not in (200, 201):
         flash(f"Gagal: {resp.get('error') if isinstance(resp, dict) else resp}", "danger")
         return redirect(url_for("main.paslon_list"))
-    if current_app.config["AUTO_MINE"]:
-        node_request("POST", "/mine", {})
+    mine()
     ok, msg = rebuild_state()
     if not ok:
         flash(f"Rebuild gagal: {msg}", "warning")
@@ -183,31 +202,19 @@ def paslon_riwayat(pid):
     if status != 200 or not data:
         flash("Gagal mengambil chain.", "danger")
         return redirect(url_for("main.paslon_list"))
-    chain = data.get("chain", [])
-    riwayat = []
-    for block in chain:
-        for tx in block.get("transaksi", []):
-            if tx.get("tipe") != "CONTRACT_CALL":
-                continue
-            payload = tx.get("payload", {})
-            if payload.get("fungsi") in ("tambah_paslon", "ubah_paslon", "hapus_paslon"):
-                args = payload.get("args", {})
-                if args.get("id") == pid or (payload.get("fungsi") == "tambah_paslon" and args.get("nomor") == pid):
-                    riwayat.append({
-                        "block": block.get("index"),
-                        "fungsi": payload.get("fungsi"),
-                        "args": args,
-                        "timestamp": tx.get("timestamp"),
-                    })
+    riwayat = riwayat_paslon(data.get("chain", []), pid)
+    for r in riwayat:
+        r["waktu"] = datetime.fromtimestamp(r["timestamp"]).strftime("%Y-%m-%d %H:%M:%S") if r["timestamp"] else "-"
     return render_template("paslon_riwayat.html", pid=pid, riwayat=riwayat)
 
 
 @bp.route("/contract/deploy", methods=["POST"])
 def contract_deploy():
-    addr = deploy_contract(current_app.config["CONTRACT_NAME"])
-    db.session.add(ContractMeta(address=addr, name=current_app.config["CONTRACT_NAME"]))
-    db.session.commit()
-    flash(f"Contract deployed: {addr}", "success")
+    addr, err = deploy_ke_chain()
+    if addr:
+        flash(f"Contract dideploy ke chain di alamat {addr}", "success")
+    else:
+        flash(f"Deploy gagal: {err}", "danger")
     return redirect(url_for("main.index"))
 
 

@@ -87,37 +87,70 @@ class PaslonContract:
         return None
 
 
-def state_paslon_dari_chain(chain):
-    """Replay chain menjadi state paslon terkini (list of dict)."""
-    state = []
-    contract = PaslonContract("replay")
+def _isi_tx(chain):
+    """Urutkan (index_block, tipe, payload, timestamp) dari chain berupa objek Block atau dict."""
     for idx, block in enumerate(chain):
         transaksi = getattr(block, "transaksi", None)
         if transaksi is None and isinstance(block, dict):
             transaksi = block.get("transaksi", [])
         for tx in (transaksi or []):
-            tipe = getattr(tx, "tipe", None)
-            payload = getattr(tx, "payload", None)
-            if tipe is None and isinstance(tx, dict):
-                tipe = tx.get("tipe")
-                payload = tx.get("payload")
-            if tipe != "CONTRACT_CALL" or not isinstance(payload, dict):
-                continue
-            args = payload.get("args", {}) or {}
-            if payload.get("fungsi") == "tambah_paslon":
-                ok, _, state = contract.tambah_paslon(state, args)
-                if ok and state:
-                    state[-1]["block_number"] = idx
-            elif payload.get("fungsi") == "ubah_paslon":
-                ok, _, state = contract.ubah_paslon(state, args)
-                if ok:
-                    for p in state:
-                        if p.get("id") == args.get("id"):
-                            p["block_number"] = idx
-            elif payload.get("fungsi") == "hapus_paslon":
-                ok, _, state = contract.hapus_paslon(state, args)
-                if ok:
-                    for p in state:
-                        if p.get("id") == args.get("id"):
-                            p["block_number"] = idx
+            if isinstance(tx, dict):
+                yield idx, tx.get("tipe"), tx.get("payload"), tx.get("timestamp")
+            else:
+                yield idx, getattr(tx, "tipe", None), getattr(tx, "payload", None), getattr(tx, "timestamp", None)
+
+
+def _replay(chain):
+    """Jalankan ulang setiap CONTRACT_CALL yang sah.
+    Menghasilkan (idx, fungsi, id_paslon, sebelum, sesudah, timestamp, state)."""
+    state = []
+    contract = PaslonContract("replay")
+    fungsi_contract = {
+        "tambah_paslon": contract.tambah_paslon,
+        "ubah_paslon": contract.ubah_paslon,
+        "hapus_paslon": contract.hapus_paslon,
+    }
+    for idx, tipe, payload, ts in _isi_tx(chain):
+        if tipe != "CONTRACT_CALL" or not isinstance(payload, dict):
+            continue
+        fungsi = payload.get("fungsi")
+        if fungsi not in fungsi_contract:
+            continue
+        args = payload.get("args", {}) or {}
+        ok, _, state_baru = fungsi_contract[fungsi](state, args)
+        if not ok:
+            continue
+        pid = state_baru[-1]["id"] if fungsi == "tambah_paslon" else args.get("id")
+        sebelum = next((dict(p) for p in state if p.get("id") == pid), None)
+        state = state_baru
+        for p in state:
+            if p.get("id") == pid:
+                p["block_number"] = idx
+                sesudah = dict(p)
+        yield idx, fungsi, pid, sebelum, sesudah, ts, state
+
+
+def state_paslon_dari_chain(chain):
+    """Replay chain menjadi state paslon terkini (list of dict)."""
+    state = []
+    for *_, state in _replay(chain):
+        pass
     return state
+
+
+def riwayat_paslon(chain, pid):
+    """Riwayat perubahan satu paslon dari chain: nilai sebelum dan sesudah tiap operasi."""
+    return [
+        {"block": idx, "fungsi": fungsi, "sebelum": sebelum, "sesudah": sesudah, "timestamp": ts}
+        for idx, fungsi, id_paslon, sebelum, sesudah, ts, _ in _replay(chain)
+        if id_paslon == pid
+    ]
+
+
+def kontrak_dari_chain(chain):
+    """Alamat contract yang sudah dideploy lewat transaksi CONTRACT_DEPLOY di chain."""
+    return {
+        payload["contract_address"]
+        for _, tipe, payload, _ in _isi_tx(chain)
+        if tipe == "CONTRACT_DEPLOY" and isinstance(payload, dict) and payload.get("contract_address")
+    }

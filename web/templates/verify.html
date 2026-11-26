@@ -1,5 +1,14 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Verifikasi Chain</h2>
-<pre>{{ data }}</pre>
+{% if status != 200 %}
+  <div class="alert alert-warning">Node tidak dapat dihubungi: {{ data.error }}</div>
+{% elif data.valid %}
+  <div class="alert alert-success">Chain VALID untuk seluruh {{ data.panjang }} block.</div>
+{% else %}
+  <div class="alert alert-danger">
+    Chain TIDAK VALID. Block pertama yang rusak: index <strong>{{ data.index_rusak }}</strong>.<br>
+    Alasan: {{ data.alasan }}
+  </div>
+{% endif %}
 {% endblock %}

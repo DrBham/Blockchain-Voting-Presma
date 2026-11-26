@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 from node import Block, Transaksi, alamat_dari_pem
 
-BATAS_WAKTU_NODE = 120
+BATAS_WAKTU_NODE = 300  # mining difficulty tinggi bisa > 1 menit
 NODE_DISCOVERY_PORT = 9999
 DISCOVERED_NODES = set()
 
@@ -142,7 +142,7 @@ def kirim_transaksi(alamat, tx):
 
 BANTUAN = """Perintah:
   identitas <NIM>                               buat/lihat identitas voter
-  vote <node> <Paslon> <NIM>                    buat, tanda tangani, kirim suara ke pool
+  vote <node> <nomor_paslon> <NIM>              buat, tanda tangani, kirim suara ke pool
   vote_ubah <node> <Paslon> <PaslonDiubah> <NIM>  suara diubah SETELAH ditandatangani (harus ditolak)
   pool <node>                                   lihat transaksi pending
   mine <node>                                   bentuk block dari pool + proof of work
@@ -165,7 +165,7 @@ def perintah_vote(arg):
     # Mode manual lama: vote <node> <Paslon> <NIM>
     if len(arg) >= 3:
         node_addr = arg[0]
-        kandidat = arg[1]
+        kandidat = int(arg[1]) if arg[1].isdigit() else arg[1]  # nomor paslon disimpan sebagai angka
         nim = arg[2]
         dompet = Dompet(nim)
         dompet.tampilkan_identitas()

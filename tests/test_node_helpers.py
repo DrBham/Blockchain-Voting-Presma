@@ -39,6 +39,18 @@ class TestBeacon(unittest.TestCase):
         self.assertEqual(res, "192.168.137.20:5002")
         self.assertIn("192.168.137.20:5002", self.node.peers)
 
+    def test_remote_same_port_as_local_peer_added(self):
+        self.node.peers.append("127.0.0.1:5002")
+        data = {"type": "presma-node", "http_port": 5002, "difficulty": 4, "genesis": self.node.blockchain.chain[0].hash}
+        node.proses_beacon(data, ("192.168.137.20", 9999), self.node)
+        self.assertIn("192.168.137.20:5002", self.node.peers)
+
+
+class TestMining(unittest.TestCase):
+    def test_tambang_dibatalkan(self):
+        block = node.Block(1, [], "0")
+        self.assertIsNone(block.tambang(64, berhenti=lambda: True))
+
 
 if __name__ == "__main__":
     unittest.main()
