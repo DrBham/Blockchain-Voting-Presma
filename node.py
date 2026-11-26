@@ -277,11 +277,18 @@ def validasi_transaksi(tx, state_paslon=None):
         return ok, alasan
 
     # VOTE
-    if tx.kandidat not in PASLON_VALID:
-        return False, f"Kandidat '{tx.kandidat}' tidak valid. Pilihan resmi: {', '.join(PASLON_VALID)}"
     nim_valid, pesan_err = validasi_nim_untad(str(tx.voter_id))
     if not nim_valid:
         return False, f"NIM '{tx.voter_id}' ditolak: {pesan_err}"
+
+    try:
+        nomor_paslon = int(tx.kandidat)
+    except (TypeError, ValueError):
+        nomor_paslon = tx.kandidat
+    state_paslon = state_paslon or []
+    paslon = next((p for p in state_paslon if p.get("nomor") == nomor_paslon and p.get("aktif", True)), None)
+    if paslon is None:
+        return False, f"Paslon '{tx.kandidat}' tidak ditemukan atau tidak aktif"
     return True, "valid"
 
 
@@ -521,13 +528,14 @@ class Blockchain:
         return ok, rusak, alasan
 
     def rekap(self):
-        hasil = {p: 0 for p in PASLON_VALID}
+        hasil = {}
         with self.lock:
             transaksi = [tx for block in self.chain for tx in block.transaksi]
             for tx in transaksi:
-                if tx.kandidat in hasil:
-                    hasil[tx.kandidat] += 1
-        return len(transaksi), hasil
+                if getattr(tx, "tipe", "VOTE") != "VOTE":
+                    continue
+                hasil[tx.kandidat] = hasil.get(tx.kandidat, 0) + 1
+        return sum(hasil.values()), hasil
 
     # [CHECKPOINT 9] Memanipulasi data block lama (khusus demo), hash sengaja TIDAK dihitung ulang
     def ubah_data_demo(self, index):
@@ -776,8 +784,10 @@ class NodeHandler(BaseHTTPRequestHandler):
             log("menjalankan longest-chain rule")
             berubah = NODE.resolve()
             self._balas(200, {"rantai_diganti": berubah, "panjang": len(bc.chain)})
-        elif self.path == "/peers":
-            self._balas(200, {"peers": NODE.peers})
+        elif self.path == "/paslon":
+            with bc.lock:
+                state = state_paslon_dari_chain(bc.chain)
+            self._balas(200, {"paslon": state})
         else:
             self._balas(404, {"error": "endpoint tidak dikenal"})
 

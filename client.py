@@ -160,15 +160,22 @@ def perintah_identitas(arg):
 
 
 def perintah_vote(arg):
-    alamat = arg[0]
-    kandidat = arg[1] if len(arg) > 1 else "Paslon 1"
-    nim = arg[2] if len(arg) > 2 else "F55125001"
-    dompet = Dompet(nim)
-    dompet.tampilkan_identitas()
-    tx = dompet.buat_transaksi(kandidat)
-    print(f"Transaksi dibuat dan ditandatangani: {tx.voter_id} -> {tx.kandidat}")
-    print(f"  Signature: {tx.signature[:32]}...")
-    kirim_transaksi(alamat, tx)
+    alamat = arg[0] if arg else None
+    # jika dipanggil interaktif, arg berisi [node, kandidat?, nim?]; pertahankan kompatibilitas
+    # Mode manual lama: vote <node> <Paslon> <NIM>
+    if len(arg) >= 3:
+        node_addr = arg[0]
+        kandidat = arg[1]
+        nim = arg[2]
+        dompet = Dompet(nim)
+        dompet.tampilkan_identitas()
+        tx = dompet.buat_transaksi(kandidat)
+        print(f"Transaksi dibuat dan ditandatangani: {tx.voter_id} -> {tx.kandidat}")
+        print(f"  Signature: {tx.signature[:32]}...")
+        kirim_transaksi(node_addr, tx)
+        return
+    # Mode interaktif dipanggil dari menu dengan [node] saja? tangani di menu separately
+    print("Penggunaan: vote <node> <nomor_paslon> <NIM>")
 
 
 # [CHECKPOINT 3] Transaksi diubah SETELAH ditandatangani -> harus ditolak node
@@ -220,11 +227,16 @@ def perintah_validate(arg):
 
 
 def perintah_tally(arg):
-    _, hasil = panggil_node(arg[0], "tally")
+    alamat = arg[0]
+    _, hasil = panggil_node(alamat, "tally")
+    _, paslon_data = panggil_node(alamat, "paslon")
+    paslons = paslon_data.get("paslon", []) if isinstance(paslon_data, dict) else []
+    nama_map = {str(p.get("nomor")): p.get("nama") for p in paslons}
     print(f"Total Suara Masuk: {hasil['total_suara']}")
     print("Hasil Rekapitulasi Suara:")
     for kandidat, jumlah in hasil["rekap_suara"].items():
-        print(f"  - {kandidat}: {jumlah} suara")
+        nama = nama_map.get(str(kandidat), kandidat)
+        print(f"  - {nama} (nomor {kandidat}): {jumlah} suara")
 
 
 def tampilkan_pesan_node(alamat, endpoint, data):
@@ -341,12 +353,30 @@ def menu_interaktif():
                 if not dompet:
                     print("Pilih pemilih terlebih dahulu (menu 2).")
                     continue
-                kandidat = input("Kandidat (Paslon 1/Paslon 2): ").strip()
-                if kandidat:
-                    tx = dompet.buat_transaksi(kandidat)
-                    print(f"Transaksi dibuat dan ditandatangani: {tx.voter_id} -> {tx.kandidat}")
-                    print(f"  Signature: {tx.signature[:32]}...")
-                    kirim_transaksi(target_node, tx)
+                # ambil daftar paslon dari node
+                _, data = panggil_node(target_node, "paslon")
+                paslons = [p for p in (data.get("paslon", []) if isinstance(data, dict) else []) if p.get("aktif", True)]
+                if not paslons:
+                    print("Belum ada paslon aktif. Tambahkan via web terlebih dahulu.")
+                    continue
+                print("Daftar paslon:")
+                for p in paslons:
+                    print(f"  {p.get('nomor')}. {p.get('nama')} (block {p.get('block_number')})")
+                nomor = input("Nomor paslon: ").strip()
+                if not nomor:
+                    continue
+                try:
+                    nomor_int = int(nomor)
+                except ValueError:
+                    print("Nomor harus angka.")
+                    continue
+                if not any(p.get("nomor") == nomor_int for p in paslons):
+                    print("Nomor paslon tidak ditemukan.")
+                    continue
+                tx = dompet.buat_transaksi(nomor_int)
+                print(f"Transaksi dibuat dan ditandatangani: {tx.voter_id} -> paslon {tx.kandidat}")
+                print(f"  Signature: {tx.signature[:32]}...")
+                kirim_transaksi(target_node, tx)
             elif pilihan == "5":
                 if not dompet:
                     print("Pilih pemilih terlebih dahulu (menu 2).")
