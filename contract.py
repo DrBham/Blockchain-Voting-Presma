@@ -1,11 +1,18 @@
-# Smart contract mock-up pendaftaran paslon. State contract hanya berubah lewat
-# transaksi CONTRACT_CALL yang tercatat di chain, lalu dibangun ulang dengan replay.
+# Smart contract mock-up pendaftaran paslon dan status pemilu. State contract hanya berubah
+# lewat transaksi CONTRACT_CALL yang tercatat di chain, lalu dibangun ulang dengan replay.
 
+import copy
 import hashlib
+import json
 import secrets
 import time
 
-FUNGSI_PENGUBAH = ("tambah_paslon", "ubah_paslon", "hapus_paslon")
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
+
+STATUS = ("persiapan", "dibuka", "ditutup", "dihitung")
+FUNGSI_STATUS = ("buka_pemungutan", "tutup_pemungutan", "buka_kunci")
+FUNGSI_PENGUBAH = ("tambah_paslon", "ubah_paslon", "hapus_paslon") + FUNGSI_STATUS
 MAKS_NAMA = 120
 MAKS_VISI = 500
 
@@ -73,8 +80,8 @@ class PaslonContract:
         visi, salah = _teks(args.get("visi"), "visi", MAKS_VISI)
         if salah:
             return False, salah, state
-        if any(p["nomor"] == nomor for p in state):
-            return False, f"nomor paslon {nomor} sudah terdaftar", state
+        if any(p["aktif"] and p["nomor"] == nomor for p in state):
+            return False, f"nomor paslon {nomor} sudah dipakai paslon aktif", state
         state.append({
             "id": max((p["id"] for p in state), default=0) + 1,
             "nomor": nomor,
@@ -104,8 +111,8 @@ class PaslonContract:
             nomor = bilangan_positif(args["nomor"])
             if nomor is None:
                 return False, "nomor paslon harus angka bulat >= 1", state
-            if any(p["id"] != target["id"] and p["nomor"] == nomor for p in state):
-                return False, f"nomor paslon {nomor} sudah terdaftar", state
+            if any(p["aktif"] and p["id"] != target["id"] and p["nomor"] == nomor for p in state):
+                return False, f"nomor paslon {nomor} sudah dipakai paslon aktif", state
             perubahan["nomor"] = nomor
         target.update(perubahan)
         return True, "paslon diubah", state
@@ -125,13 +132,101 @@ class PaslonContract:
         return next((dict(p) for p in (state or []) if p["id"] == paslon_id), None)
 
 
+# ---------------------------------------------------------------- kunci pemilu
+
+def _oaep():
+    return padding.OAEP(mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
+
+
+def buat_kunci_pemilu():
+    """Pasangan kunci RSA 2048 untuk mengenkripsi pilihan. Mengembalikan (privat_pem, publik_pem)."""
+    kunci = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    privat = kunci.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
+    publik = kunci.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
+    return privat, publik
+
+
+def enkripsi_pilihan(nomor, kunci_publik_pem):
+    """RSA-OAEP SHA-256 atas JSON {"paslon": nomor}. OAEP teracak: pilihan sama, sandi berbeda."""
+    kunci = serialization.load_pem_public_key(kunci_publik_pem.encode())
+    return kunci.encrypt(json.dumps({"paslon": nomor}).encode("utf-8"), _oaep()).hex()
+
+
+def dekripsi_pilihan(sandi_hex, kunci_privat_pem):
+    """Nomor paslon dari sandi, atau None kalau sandi rusak / isinya bukan {"paslon": int}."""
+    try:
+        kunci = serialization.load_pem_private_key(kunci_privat_pem.encode(), password=None)
+        isi = json.loads(kunci.decrypt(bytes.fromhex(sandi_hex), _oaep()))
+    except (ValueError, TypeError, AttributeError):
+        return None
+    nomor = isi.get("paslon") if isinstance(isi, dict) else None
+    return nomor if isinstance(nomor, int) and not isinstance(nomor, bool) else None
+
+
+def _kunci_pasangan(kunci_privat_pem, kunci_publik_pem):
+    try:
+        privat = serialization.load_pem_private_key(kunci_privat_pem.encode(), password=None)
+        publik = serialization.load_pem_public_key(kunci_publik_pem.encode())
+        return privat.public_key().public_numbers() == publik.public_numbers()
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
+# ---------------------------------------------------------------- state contract
+
+def state_awal(kunci_publik):
+    return {"paslon": [], "status": "persiapan", "kunci_publik": kunci_publik, "kunci_privat": None}
+
+
+def _ubah_status(state, fungsi, args):
+    """Fungsi status pemilu. state sudah berupa salinan; mengembalikan (ok, alasan)."""
+    status = state["status"]
+    if fungsi == "buka_pemungutan":
+        if status != "persiapan":
+            return False, f"pemungutan hanya bisa dibuka dari status persiapan (sekarang {status})"
+        nomor = sorted(p["nomor"] for p in state["paslon"] if p["aktif"])
+        if len(nomor) < 2:
+            return False, "pemungutan butuh minimal 2 paslon aktif"
+        if nomor != list(range(1, len(nomor) + 1)):
+            return False, f"nomor paslon aktif harus berurutan mulai 1 (sekarang {nomor})"
+        state["status"] = "dibuka"
+        return True, "pemungutan dibuka"
+    if fungsi == "tutup_pemungutan":
+        if status != "dibuka":
+            return False, f"pemungutan hanya bisa ditutup dari status dibuka (sekarang {status})"
+        state["status"] = "ditutup"
+        return True, "pemungutan ditutup"
+    if status != "ditutup":  # buka_kunci
+        return False, f"kunci pemilu hanya bisa dibuka dari status ditutup (sekarang {status})"
+    kunci = args.get("kunci_privat")
+    if not isinstance(kunci, str) or not _kunci_pasangan(kunci, state["kunci_publik"] or ""):
+        return False, "kunci privat bukan pasangan kunci pemilu yang tercatat"
+    state["status"], state["kunci_privat"] = "dihitung", kunci
+    return True, "kunci pemilu dibuka, suara bisa dihitung"
+
+
 def jalankan_contract(state, fungsi, args):
-    """Eksekusi satu fungsi pengubah state. Mengembalikan (ok, alasan, state_baru)."""
+    """Eksekusi satu fungsi pengubah state (dict). Mengembalikan (ok, alasan, state_baru).
+    State masukan tidak diubah; kalau ditolak, state masukan yang dikembalikan."""
     if fungsi not in FUNGSI_PENGUBAH:
         return False, f"fungsi contract '{fungsi}' tidak dikenal", state
     if not isinstance(args, dict):
         return False, "argumen contract harus berupa objek", state
-    return getattr(PaslonContract("-"), fungsi)(state, args)
+    baru = copy.deepcopy(state)
+    if fungsi in FUNGSI_STATUS:
+        ok, alasan = _ubah_status(baru, fungsi, args)
+    elif baru["status"] != "persiapan":
+        ok, alasan = False, f"paslon hanya bisa diubah saat status persiapan (sekarang {baru['status']})"
+    else:
+        ok, alasan, baru["paslon"] = getattr(PaslonContract("-"), fungsi)(baru["paslon"], args)
+    return ok, alasan, (baru if ok else state)
 
 
 def _isi_tx(chain):
@@ -144,8 +239,9 @@ def _isi_tx(chain):
 
 def _replay(chain):
     """Jalankan ulang setiap CONTRACT_CALL sah dari pemilik contract pertama yang dideploy.
-    Menghasilkan (idx, fungsi, id_paslon, sebelum, sesudah, timestamp, state)."""
-    state = []
+    Menghasilkan (idx, fungsi, id_paslon, sebelum, sesudah, timestamp, state);
+    untuk deploy dan fungsi status, id_paslon/sebelum/sesudah bernilai None."""
+    state = state_awal(None)
     kontrak = pemilik = None
     for idx, tx in _isi_tx(chain):
         payload = tx.get("payload")
@@ -153,6 +249,8 @@ def _replay(chain):
             continue
         if tx.get("tipe") == "CONTRACT_DEPLOY" and kontrak is None:
             kontrak, pemilik = payload.get("contract_address"), tx.get("public_key")
+            state = state_awal(payload.get("kunci_pemilu"))
+            yield idx, "deploy", None, None, None, tx.get("timestamp"), state
             continue
         if (tx.get("tipe") != "CONTRACT_CALL" or kontrak is None
                 or payload.get("contract_address") != kontrak or tx.get("public_key") != pemilik):
@@ -161,20 +259,30 @@ def _replay(chain):
         ok, _, state_baru = jalankan_contract(state, fungsi, args)
         if not ok:
             continue
-        pid = state_baru[-1]["id"] if fungsi == "tambah_paslon" else bilangan_positif(args.get("id"))
-        sebelum = next((dict(p) for p in state if p["id"] == pid), None)
+        if fungsi in FUNGSI_STATUS:
+            state = state_baru
+            yield idx, fungsi, None, None, None, tx.get("timestamp"), state
+            continue
+        paslon = state_baru["paslon"]
+        pid = paslon[-1]["id"] if fungsi == "tambah_paslon" else bilangan_positif(args.get("id"))
+        sebelum = next((dict(p) for p in state["paslon"] if p["id"] == pid), None)
         state = state_baru
-        target = next(p for p in state if p["id"] == pid)
+        target = next(p for p in paslon if p["id"] == pid)
         target["block_number"] = idx
         yield idx, fungsi, pid, sebelum, dict(target), tx.get("timestamp"), state
 
 
-def state_paslon_dari_chain(chain):
-    """Replay chain menjadi state paslon terkini (list of dict)."""
-    state = []
+def state_contract_dari_chain(chain):
+    """Replay chain menjadi state contract terkini (dict: paslon, status, kunci)."""
+    state = state_awal(None)
     for *_, state in _replay(chain):
         pass
     return state
+
+
+def state_paslon_dari_chain(chain):
+    """Replay chain menjadi state paslon terkini (list of dict)."""
+    return state_contract_dari_chain(chain)["paslon"]
 
 
 def riwayat_paslon(chain, pid):
@@ -182,5 +290,5 @@ def riwayat_paslon(chain, pid):
     return [
         {"block": idx, "fungsi": fungsi, "sebelum": sebelum, "sesudah": sesudah, "timestamp": ts}
         for idx, fungsi, id_paslon, sebelum, sesudah, ts, _ in _replay(chain)
-        if id_paslon == pid
+        if id_paslon is not None and id_paslon == pid
     ]

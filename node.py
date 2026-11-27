@@ -1,20 +1,20 @@
 # Node voting blockchain terdistribusi Universitas Tadulako.
 
+import copy
 import hashlib
 import json
 import re
 import socket
-import sys
 import threading
 import time
 import urllib.request
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-from contract import jalankan_contract, state_paslon_dari_chain
+from contract import dekripsi_pilihan, jalankan_contract, state_awal, state_paslon_dari_chain
 
 PORT = 0
 IFACE_IP = "127.0.0.1"
@@ -23,6 +23,7 @@ FAKULTAS_UNTAD = {"A", "B", "C", "D", "E", "F", "G", "K", "L", "N", "P"}
 POLA_NIM = re.compile(r"[A-Z]\d{7,8}")
 POLA_ALAMAT_CONTRACT = re.compile(r"[0-9a-f]{40}")
 POLA_PEER = re.compile(r"[A-Za-z0-9.-]+:\d{1,5}")
+POLA_SANDI = re.compile(r"[0-9a-f]{512}")  # RSA-OAEP 2048 bit = 256 byte
 
 BATAS_WAKTU_JARINGAN = 5
 BATAS_ISI_PERMINTAAN = 5 * 1024 * 1024  # byte; mencegah body raksasa menghabiskan memori
@@ -55,6 +56,23 @@ def validasi_nim_untad(nim):
     return True, "Valid"
 
 
+def _salah_nim(nim):
+    """Pesan error kalau NIM tidak sah (pola + kode fakultas), None kalau sah."""
+    if not isinstance(nim, str) or not POLA_NIM.fullmatch(nim):
+        return f"NIM '{nim}' harus 1 huruf kapital + 7-8 digit, tanpa spasi"
+    nim_valid, pesan_err = validasi_nim_untad(nim)
+    return None if nim_valid else f"NIM '{nim}' ditolak: {pesan_err}"
+
+
+def _kunci_rsa_valid(pem, ukuran=None):
+    """True kalau pem adalah public key PEM RSA (dan berukuran `ukuran` bit bila diminta)."""
+    try:
+        kunci = serialization.load_pem_public_key(pem.encode())
+    except (ValueError, TypeError, AttributeError):
+        return False
+    return isinstance(kunci, rsa.RSAPublicKey) and ukuran in (None, kunci.key_size)
+
+
 # ---------------------------------------------------------------- jaringan lokal
 
 def deteksi_ip_non_loopback():
@@ -85,27 +103,6 @@ def deteksi_ip_non_loopback():
 def ip_milik_sendiri():
     """Semua alamat yang menunjuk ke mesin ini."""
     return set(deteksi_ip_non_loopback()) | {"127.0.0.1", "localhost", "::1", IFACE_IP}
-
-
-def deteksi_ip_utama(otomatis=False):
-    """Pilih IP interface utama. Prompt jika >1 dan tidak otomatis."""
-    ips = deteksi_ip_non_loopback()
-    if not ips:
-        return "127.0.0.1"
-    if otomatis:
-        return ips[0]
-    ips.append("127.0.0.1")  # opsi menjalankan node hanya di mesin yang sama
-    print("Pilih interface jaringan:")
-    for i, ip in enumerate(ips, 1):
-        label = " (local only)" if ip == "127.0.0.1" else ""
-        print(f"  {i}. {ip}{label}")
-    while True:
-        pilihan = input(f"Pilih interface [1-{len(ips)}] (default 1): ").strip()
-        if pilihan == "":
-            return ips[0]
-        if pilihan.isdigit() and 1 <= int(pilihan) <= len(ips):
-            return ips[int(pilihan) - 1]
-        print("Pilihan tidak valid.")
 
 
 def cari_port_kosong(mulai=5001, maks_percobaan=100):
@@ -222,7 +219,16 @@ class Transaksi:
             return f"DEPLOY {payload.get('nama')} @ {payload.get('contract_address')}"
         if self.tipe == "CONTRACT_CALL":
             alamat = str(payload.get("contract_address", ""))
-            return f"{payload.get('fungsi')}({json.dumps(payload.get('args', {}))}) @ {alamat[:12]}..."
+            args = payload.get("args", {})
+            if isinstance(args, dict) and "kunci_privat" in args:
+                args = {**args, "kunci_privat": "(PEM kunci pemilu)"}
+            return f"{payload.get('fungsi')}({json.dumps(args)}) @ {alamat[:12]}..."
+        if self.tipe == "REGISTER":
+            kunci = payload.get("public_key")
+            alamat = alamat_dari_pem(kunci)[:12] if isinstance(kunci, str) else "-"
+            return f"REGISTER NIM {payload.get('nim')} (kunci {alamat}...)"
+        if "sandi" in payload:  # tidak pernah didekripsi di sini: log node tidak boleh membocorkan pilihan
+            return f"pilihan terenkripsi (sandi {str(payload['sandi'])[:16]}...)"
         return f"vote paslon {self.kandidat}"
 
     def to_dict(self):
@@ -262,8 +268,9 @@ class KonteksRantai:
 
     def __init__(self):
         self.signature = set()  # signature yang sudah tercatat: mencegah transaksi lama dikirim ulang
-        self.pemilih = set()
-        self.paslon = []
+        self.pemilih = set()    # NIM yang sudah memilih
+        self.terdaftar = {}     # NIM -> public key PEM (transaksi REGISTER)
+        self.state = state_awal(None)  # state contract: paslon, status, kunci pemilu
         self.kontrak = None     # alamat contract aktif = deploy pertama di rantai
         self.pemilik = None     # public key yang mendeploy contract
 
@@ -271,7 +278,8 @@ class KonteksRantai:
         baru = KonteksRantai()
         baru.signature = set(self.signature)
         baru.pemilih = set(self.pemilih)
-        baru.paslon = [dict(p) for p in self.paslon]
+        baru.terdaftar = dict(self.terdaftar)
+        baru.state = copy.deepcopy(self.state)
         baru.kontrak, baru.pemilik = self.kontrak, self.pemilik
         return baru
 
@@ -283,6 +291,7 @@ class KonteksRantai:
             return False, "transaksi ini sudah pernah tercatat (replay ditolak)"
         aturan = {
             "VOTE": self._vote,
+            "REGISTER": self._register,
             "CONTRACT_DEPLOY": self._deploy,
             "CONTRACT_CALL": self._panggil_contract,
         }.get(tx.tipe)
@@ -294,19 +303,48 @@ class KonteksRantai:
         return ok, alasan
 
     def _vote(self, tx):
+        # Isi pilihan terenkripsi kunci pemilu: validator hanya memeriksa siapa, kapan, dan bentuk sandi.
         nim = tx.voter_id
-        if not POLA_NIM.fullmatch(nim):
-            return False, f"NIM '{nim}' harus 1 huruf kapital + 7-8 digit, tanpa spasi"
-        nim_valid, pesan_err = validasi_nim_untad(nim)
-        if not nim_valid:
-            return False, f"NIM '{nim}' ditolak: {pesan_err}"
-        if isinstance(tx.kandidat, bool) or not isinstance(tx.kandidat, int):
-            return False, "nomor paslon harus berupa angka bulat"
-        if not any(p["nomor"] == tx.kandidat and p["aktif"] for p in self.paslon):
-            return False, f"Paslon '{tx.kandidat}' tidak ditemukan atau tidak aktif"
+        salah = _salah_nim(nim)
+        if salah:
+            return False, salah
+        status = self.state["status"]
+        if status != "dibuka":
+            return False, f"pemungutan belum dibuka atau sudah ditutup (status {status})"
+        if nim not in self.terdaftar:
+            return False, f"NIM '{nim}' belum terdaftar sebagai pemilih"
+        if tx.public_key != self.terdaftar[nim]:
+            return False, f"kunci pengirim bukan kunci yang terdaftar untuk NIM '{nim}'"
+        if tx.kandidat is not None:
+            return False, "pilihan tidak boleh polos, kirim lewat payload sandi"
+        sandi = tx.payload.get("sandi") if isinstance(tx.payload, dict) else None
+        if not isinstance(sandi, str) or not POLA_SANDI.fullmatch(sandi):
+            return False, "sandi pilihan harus 512 karakter hex (RSA-OAEP 2048 bit)"
         if nim in self.pemilih:
             return False, f"NIM '{nim}' sudah menggunakan hak pilihnya!"
         self.pemilih.add(nim)
+        return True, "valid"
+
+    def _register(self, tx):
+        payload = tx.payload if isinstance(tx.payload, dict) else {}
+        nim, kunci = payload.get("nim"), payload.get("public_key")
+        if self.kontrak is None:
+            return False, "contract belum dideploy di chain"
+        if tx.public_key != self.pemilik:
+            return False, "hanya pemilik contract (panitia) yang boleh mendaftarkan pemilih"
+        status = self.state["status"]
+        if status not in ("persiapan", "dibuka"):
+            return False, f"registrasi pemilih sudah ditutup (status {status})"
+        salah = _salah_nim(nim)
+        if salah:
+            return False, salah
+        if nim in self.terdaftar:
+            return False, f"NIM '{nim}' sudah terdaftar"
+        if not _kunci_rsa_valid(kunci):
+            return False, "public key pemilih harus PEM RSA yang valid"
+        if kunci in self.terdaftar.values():
+            return False, "public key ini sudah dipakai NIM lain"
+        self.terdaftar[nim] = kunci
         return True, "valid"
 
     def _deploy(self, tx):
@@ -318,7 +356,10 @@ class KonteksRantai:
             return False, "alamat contract harus 40 karakter hex"
         if not isinstance(nama, str) or not nama.strip():
             return False, "nama contract wajib diisi"
+        if not _kunci_rsa_valid(payload.get("kunci_pemilu"), 2048):
+            return False, "kunci_pemilu wajib berupa public key PEM RSA 2048 bit"
         self.kontrak, self.pemilik = alamat, tx.public_key
+        self.state = state_awal(payload["kunci_pemilu"])
         return True, "valid"
 
     def _panggil_contract(self, tx):
@@ -329,9 +370,9 @@ class KonteksRantai:
             return False, f"alamat contract salah, contract aktif: {self.kontrak}"
         if tx.public_key != self.pemilik:
             return False, "hanya pemilik contract (pendeploy) yang boleh mengubah state"
-        ok, alasan, state = jalankan_contract(self.paslon, payload.get("fungsi"), payload.get("args", {}))
+        ok, alasan, state = jalankan_contract(self.state, payload.get("fungsi"), payload.get("args", {}))
         if ok:
-            self.paslon = state
+            self.state = state
         return ok, alasan
 
 
@@ -447,6 +488,22 @@ def validasi_rantai(chain, difficulty):
     return True, None, "rantai valid", konteks
 
 
+def _log_isi_block(block, sebelum, sesudah):
+    """Log transaksi contract/registrasi di block yang baru diterima, plus perubahan status pemilu."""
+    for tx in block.transaksi:
+        if tx.tipe == "CONTRACT_DEPLOY":
+            log(f"CONTRACT DEPLOYED: {tx.payload['nama']} di alamat {tx.payload['contract_address']}")
+        elif tx.tipe == "CONTRACT_CALL":
+            log(f"STATE CONTRACT BERUBAH: {tx.ringkas()} tercatat di block {block.index}")
+        elif tx.tipe == "REGISTER":
+            log(f"PEMILIH TERDAFTAR: {tx.ringkas()} tercatat di block {block.index}")
+    lama, baru = sebelum.state["status"], sesudah.state["status"]
+    if lama != baru:
+        log(f"STATUS PEMILU: {lama} -> {baru}")
+        if baru == "dihitung":
+            log("KUNCI PEMILU DIBUKA, rekap bisa dihitung")
+
+
 class Blockchain:
     def __init__(self, difficulty=4):
         self.difficulty = difficulty
@@ -499,7 +556,7 @@ class Blockchain:
 
             # [CHECKPOINT 4] Status pool: jumlah transaksi pending bertambah setiap transaksi sah masuk
             self.pool.append(tx)
-            log(f"Transaksi masuk pool. Transaksi pending sekarang: {len(self.pool)}")
+            log(f"Transaksi masuk pool. pending di pool: {len(self.pool)}")
             return True, "transaksi diterima ke pool", True
 
     def tambang_pool(self):
@@ -557,11 +614,7 @@ class Blockchain:
             log(f"Panjang rantai   : {len(self.chain)} block")
             sisa = " (kosong)" if not self.pool else " (masuk selama mining)"
             log(f"Pool sekarang    : {len(self.pool)} transaksi{sisa}")
-            for tx in block.transaksi:
-                if tx.tipe == "CONTRACT_DEPLOY":
-                    log(f"CONTRACT DEPLOYED: {tx.payload['nama']} di alamat {tx.payload['contract_address']}")
-                elif tx.tipe == "CONTRACT_CALL":
-                    log(f"STATE CONTRACT BERUBAH: {tx.ringkas()} tercatat di block {block.index}")
+            _log_isi_block(block, konteks_induk, konteks)
             return block, None
 
     def terima_block(self, block):
@@ -575,10 +628,12 @@ class Blockchain:
                 log(f"block {block.index} DITOLAK: {alasan} (status 409)")
                 return False, alasan
 
+            konteks_induk = self.konteks
             self._tambah_block(block, konteks)
             # [CHECKPOINT 10] Log PENERIMAAN di node tujuan
             log(f"block {block.index} DITERIMA dari peer | hash {block.hash[:20]}...")
             log(f"Panjang rantai: {len(self.chain)} | pool: {len(self.pool)} transaksi")
+            _log_isi_block(block, konteks_induk, konteks)
             return True, "block diterima"
 
     # [CHECKPOINT 8 dan 9] Validasi rantai; hasilnya dicetak (valid, atau index block rusak + alasan)
@@ -591,12 +646,32 @@ class Blockchain:
             log(f"VALIDASI RANTAI: TIDAK VALID. Block pertama yang rusak: index {rusak}. Alasan: {alasan}")
         return ok, rusak, alasan
 
-    def rekap(self):
-        hasil = {}
+    def tally(self):
+        """Rekap suara. Perolehan per paslon hanya bisa dihitung setelah kunci pemilu dibuka (status dihitung);
+        siapa pun bisa mengulang hitungan ini dari /chain karena kunci privatnya tercatat di chain."""
         with self.lock:
-            for tx in (tx for block in self.chain for tx in block.transaksi if tx.tipe == "VOTE"):
-                hasil[tx.kandidat] = hasil.get(tx.kandidat, 0) + 1
-        return sum(hasil.values()), hasil
+            state, suara_masuk = self.konteks.state, len(self.konteks.pemilih)
+            hasil = {"status": state["status"], "suara_masuk": suara_masuk,
+                     "hasil": None, "tidak_sah": None, "per_block": None}
+            if state["status"] != "dihitung":
+                return hasil
+            nomor_aktif = sorted(p["nomor"] for p in state["paslon"] if p["aktif"])
+            total, tidak_sah, per_block = {str(n): 0 for n in nomor_aktif}, 0, []
+            for block in self.chain:
+                isi = {}
+                for tx in block.transaksi:
+                    if tx.tipe != "VOTE":
+                        continue
+                    nomor = dekripsi_pilihan(tx.payload.get("sandi", ""), state["kunci_privat"])
+                    if nomor not in nomor_aktif:
+                        tidak_sah += 1
+                        continue
+                    isi[str(nomor)] = isi.get(str(nomor), 0) + 1
+                    total[str(nomor)] += 1
+                if isi:
+                    per_block.append({"index": block.index, "hasil": isi})
+            hasil.update(hasil=total, tidak_sah=tidak_sah, per_block=per_block)
+            return hasil
 
     # [CHECKPOINT 9] Memanipulasi data block lama (khusus demo), hash sengaja TIDAK dihitung ulang
     def ubah_data_demo(self, index):
@@ -606,8 +681,9 @@ class Blockchain:
                 return False, "index block tidak ada atau tidak berisi transaksi"
             tx = self.chain[index].transaksi[0]
             lama = tx.ringkas()
-            if tx.tipe == "VOTE":
-                tx.kandidat = 2 if tx.kandidat == 1 else 1
+            if tx.tipe == "VOTE":  # sandi diubah satu karakter: hash block tidak cocok lagi
+                sandi = str(tx.payload.get("sandi", ""))
+                tx.payload = {**tx.payload, "sandi": ("1" if sandi[:1] == "0" else "0") + sandi[1:]}
             else:
                 tx.payload = json.loads(json.dumps(tx.payload))  # salinan, lalu diubah
                 sasaran = tx.payload.setdefault("args", {}) if tx.tipe == "CONTRACT_CALL" else tx.payload
@@ -693,14 +769,17 @@ class Node:
 
     # [FITUR WAJIB: Longest-chain rule]
     # [CHECKPOINT 10] Sinkronisasi: node yang sempat mati memperoleh rantai terpanjang setelah resolve
-    def resolve(self, verbose=True):
+    def resolve(self, verbose=True, pulihkan_rusak=True):
         """Longest-chain rule: ambil rantai terpanjang yang VALID dari peer.
-        Kalau rantai lokal sendiri rusak, rantai valid dari peer dipakai walau tidak lebih panjang."""
+        Kalau rantai lokal sendiri rusak, rantai valid dari peer dipakai walau tidak lebih panjang
+        (kecuali pulihkan_rusak=False: rantai rusak dibiarkan agar demo tamper bisa diverifikasi dulu)."""
         bc = self.blockchain
         with bc.lock:
             lokal_valid = validasi_rantai(bc.chain, bc.difficulty)[0]
             panjang_lokal = len(bc.chain)
         if not lokal_valid:
+            if not pulihkan_rusak:
+                return False
             log("RESOLVE: rantai lokal TIDAK VALID, mencari rantai valid dari peer")
 
         terbaik, batas = None, panjang_lokal if lokal_valid else 0
@@ -798,7 +877,8 @@ def thread_listener(stop_event):
 def thread_resolver(stop_event):
     while not stop_event.is_set():
         try:
-            NODE.resolve(verbose=False)
+            # latar hanya mengejar rantai yang lebih panjang; pemulihan rantai rusak lewat resolve manual
+            NODE.resolve(verbose=False, pulihkan_rusak=False)
         except Exception as e:
             log(f"resolve background error: {e}")
         stop_event.wait(JEDA_RESOLVE_LATAR)
@@ -851,7 +931,8 @@ class NodeHandler(BaseHTTPRequestHandler):
         return isi
 
     def _layani(self, rute):
-        aksi = rute.get(self.path)
+        # Rute berakhiran "/" menerima satu parameter di ujung path, mis. /pemilih/F55119001
+        aksi = rute.get(self.path) or rute.get(self.path[:self.path.rfind("/") + 1])
         if aksi is None:
             self._balas(404, {"error": "endpoint tidak dikenal"})
             return
@@ -873,6 +954,9 @@ class NodeHandler(BaseHTTPRequestHandler):
             "/peers": lambda: self._balas(200, {"peers": NODE.peers}),
             "/contract": self._get_contract,
             "/paslon": self._get_paslon,
+            "/status": self._get_status,
+            "/pemilih/": self._get_pemilih,
+            "/tx/": self._get_tx,
         })
 
     def do_POST(self):
@@ -903,8 +987,42 @@ class NodeHandler(BaseHTTPRequestHandler):
         self._balas(200, {"valid": ok, "index_rusak": rusak, "alasan": alasan, "panjang": len(NODE.blockchain.chain)})
 
     def _get_tally(self):
-        total, rekap = NODE.blockchain.rekap()
-        self._balas(200, {"total_suara": total, "rekap_suara": rekap})
+        self._balas(200, NODE.blockchain.tally())
+
+    def _get_status(self):
+        bc = NODE.blockchain
+        with bc.lock:
+            k, terakhir = bc.konteks, bc.terakhir()
+            self._balas(200, {
+                "status": k.state["status"],
+                "terdaftar": len(k.terdaftar),
+                "suara_masuk": len(k.pemilih),
+                "pool": len(bc.pool),
+                "panjang": len(bc.chain),
+                "block_terakhir": {"index": terakhir.index, "hash": terakhir.hash, "timestamp": terakhir.timestamp},
+                "kunci_pemilu": k.state["kunci_publik"],
+                "kontrak": k.kontrak,
+            })
+
+    def _get_pemilih(self):
+        # Dibaca dari konteks pool: suara/registrasi yang masih di pool sudah dihitung,
+        # jadi web tidak mengirim suara kedua selama suara pertama belum ditambang.
+        nim = self.path.rsplit("/", 1)[1].upper()
+        with NODE.blockchain.lock:
+            k = NODE.blockchain.konteks_pool
+            isi = {"terdaftar": nim in k.terdaftar, "public_key": k.terdaftar.get(nim),
+                   "sudah_memilih": nim in k.pemilih}
+        self._balas(200, isi)
+
+    def _get_tx(self):
+        signature = self.path.rsplit("/", 1)[1]
+        bc = NODE.blockchain
+        with bc.lock:
+            if any(tx.signature == signature for tx in bc.pool):
+                self._balas(200, {"status": "pool", "block": None})
+                return
+            index = next((b.index for b in bc.chain for tx in b.transaksi if tx.signature == signature), None)
+        self._balas(200, {"status": "tidak_ada" if index is None else "block", "block": index})
 
     def _get_resolve(self):
         log("menjalankan longest-chain rule")
@@ -979,99 +1097,19 @@ class NodeHandler(BaseHTTPRequestHandler):
 
 
 def tambah_peer_manual(node, peer):
+    """Cek difficulty dan genesis peer sebelum dihubungkan. Mengembalikan (berhasil, pesan)."""
     if not peer_valid(peer):
-        print("Format peer harus host:port")
-        return
+        return False, "Format peer harus host:port"
     try:
         data = ambil_json(f"http://{peer}/chain")
     except Exception as e:
-        print(f"Gagal menghubungi {peer}: {e}")
-        return
+        return False, f"Gagal menghubungi {peer}: {e}"
     if data.get("difficulty") != node.blockchain.difficulty:
-        print(f"Ditolak: difficulty peer ({data.get('difficulty')}) != lokal ({node.blockchain.difficulty})")
-        return
+        return False, f"Ditolak: difficulty peer ({data.get('difficulty')}) != lokal ({node.blockchain.difficulty})"
     rantai_peer = data.get("chain", [])
     if not rantai_peer or rantai_peer[0].get("hash") != GENESIS_HASH:
-        print("Ditolak: genesis tidak cocok")
-        return
-    if node.tambah_peer(peer, timbal_balik=True):
-        print(f"Peer {peer} ditambahkan.")
-        node.jadwalkan_resolve()
-    else:
-        print("Peer tidak valid atau sudah ada.")
-
-
-def menu_interaktif(node):
-    stop_event = threading.Event()
-    mulai_discovery(IFACE_IP, stop_event)
-    try:
-        while True:
-            print("\n=== Node Voting Presma (Interaktif) ===")
-            print(f"Interface: {IFACE_IP} | Node: http://{IFACE_IP}:{node.port} (difficulty {node.blockchain.difficulty})")
-            print("1. Status")
-            print("2. Daftar peer")
-            print("3. Cari node (tunggu 6 detik)")
-            print("4. Tambah peer manual")
-            print("5. Tampilkan alamat untuk client.py")
-            print("6. Hentikan node")
-            pilihan = input("Pilih: ").strip()
-            if pilihan == "1":
-                with node.blockchain.lock:
-                    print(f"Port: {node.port} | Peers: {len(node.peers)} | Rantai: {len(node.blockchain.chain)} block | Pool: {len(node.blockchain.pool)}")
-                print("Peers:", node.peers)
-            elif pilihan == "2":
-                print("Peers:", node.peers)
-            elif pilihan == "3":
-                print("Mencari node lain selama 6 detik...")
-                time.sleep(6)
-                print("Peers sekarang:", node.peers)
-            elif pilihan == "4":
-                peer = input("Alamat peer (host:port): ").strip()
-                if peer:
-                    tambah_peer_manual(node, peer)
-            elif pilihan == "5":
-                print(f"Gunakan di client.py: {IFACE_IP}:{node.port}")
-            elif pilihan == "6":
-                break
-            else:
-                print("Pilihan tidak valid.")
-    finally:
-        stop_event.set()
-        if node.http_server:
-            node.http_server.shutdown()
-
-
-if __name__ == "__main__":
-    if len(sys.argv) == 1:
-        IFACE_IP = deteksi_ip_utama(otomatis=False)
-        PORT = cari_port_kosong()
-        if PORT is None:
-            print("Tidak ada port kosong di range 5001-5100.")
-            sys.exit(1)
-        peers_awal, difficulty, interaktif = [], 4, True
-    else:
-        PORT = int(sys.argv[1])
-        peers_awal = sys.argv[2].split(",") if len(sys.argv) > 2 and sys.argv[2] else []
-        difficulty = int(sys.argv[3]) if len(sys.argv) > 3 else 4
-        IFACE_IP = deteksi_ip_utama(otomatis=True)
-        interaktif = False
-
-    NODE = Node(PORT, peers_awal, difficulty)
-    print(f"Node Voting UNTAD aktif di port {PORT}")
-    print("Peers     : " + (", ".join(NODE.peers) if NODE.peers else "(belum ada)"))
-    print(f"Difficulty: {difficulty} (hash harus diawali {'0' * difficulty})")
-    print(f"Genesis   : {GENESIS_HASH[:20]}...")
-    print(f"Interface : {IFACE_IP}")
-
-    server = ThreadingHTTPServer(("0.0.0.0", PORT), NodeHandler)
-    NODE.http_server = server
-    if interaktif:
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        menu_interaktif(NODE)
-    else:
-        stop_event = threading.Event()
-        mulai_discovery(IFACE_IP, stop_event)
-        try:
-            server.serve_forever()
-        except KeyboardInterrupt:
-            stop_event.set()
+        return False, "Ditolak: genesis tidak cocok"
+    if not node.tambah_peer(peer, timbal_balik=True):
+        return False, "Peer tidak valid atau sudah ada."
+    node.jadwalkan_resolve()
+    return True, f"Peer {peer} ditambahkan."

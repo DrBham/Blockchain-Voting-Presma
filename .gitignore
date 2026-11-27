@@ -8,3 +8,6 @@ docs/superpowers/
 LAPORAN PROJECT BASED KELOMPOK 4.pdf
 web_state.db
 .venv/
+
+# Kunci privat pemilu dipegang panitia, dibuka ke chain hanya setelah pemungutan ditutup.
+kunci_pemilu.pem

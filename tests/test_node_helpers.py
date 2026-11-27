@@ -54,3 +54,18 @@ class TestMining(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestResolveLatar(unittest.TestCase):
+    def test_latar_tidak_memulihkan_rantai_rusak(self):
+        from node import Node
+        n = Node(5098, [], 1)
+        n.blockchain.chain[0].nonce = 99  # rantai lokal dibuat rusak, seperti demo tamper
+        n.peers = ["127.0.0.1:1"]  # peer tak terjangkau: resolve normal akan mencoba, latar tidak
+        dipanggil = []
+        self.addCleanup(setattr, node, "ambil_json", node.ambil_json)
+        node.ambil_json = lambda url: dipanggil.append(url) or {}
+        self.assertFalse(n.resolve(verbose=False, pulihkan_rusak=False))
+        self.assertEqual(dipanggil, [])
+        n.resolve(verbose=False)
+        self.assertEqual(len(dipanggil), 1)

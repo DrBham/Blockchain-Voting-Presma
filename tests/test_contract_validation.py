@@ -3,6 +3,7 @@ import unittest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from contract import buat_kunci_pemilu, enkripsi_pilihan
 from node import KonteksRantai, Transaksi
 
 
@@ -21,6 +22,7 @@ class TestKonteksRantai(unittest.TestCase):
         cls.admin = buat_kunci()
         cls.penyerang = buat_kunci()
         cls.alamat = "a" * 40
+        cls.kunci_pemilu = buat_kunci_pemilu()
 
     def _tx(self, kunci, tipe, payload=None, voter_id="admin", kandidat=None):
         tx = Transaksi(voter_id, kandidat, kunci[1], tipe=tipe, payload=payload)
@@ -32,9 +34,22 @@ class TestKonteksRantai(unittest.TestCase):
 
     def _konteks_dengan_paslon(self):
         k = KonteksRantai()
-        self.assertTrue(k.terapkan(self._tx(self.admin, "CONTRACT_DEPLOY", {"contract_address": self.alamat, "nama": "P"}))[0])
+        deploy = {"contract_address": self.alamat, "nama": "P", "kunci_pemilu": self.kunci_pemilu[1]}
+        self.assertTrue(k.terapkan(self._tx(self.admin, "CONTRACT_DEPLOY", deploy))[0])
         self.assertTrue(k.terapkan(self._panggil(self.admin, "tambah_paslon", {"nomor": 1, "nama": "A"}))[0])
         return k
+
+    def _konteks_dibuka(self, pemilih):
+        """Contract dengan 2 paslon, NIM di `pemilih` terdaftar, pemungutan dibuka."""
+        k = self._konteks_dengan_paslon()
+        self.assertTrue(k.terapkan(self._panggil(self.admin, "tambah_paslon", {"nomor": 2, "nama": "B"}))[0])
+        for nim, kunci in pemilih.items():
+            self.assertTrue(k.terapkan(self._tx(self.admin, "REGISTER", {"nim": nim, "public_key": kunci[1]}))[0])
+        self.assertTrue(k.terapkan(self._panggil(self.admin, "buka_pemungutan", {}))[0])
+        return k
+
+    def _vote(self, kunci, nim, nomor=1):
+        return self._tx(kunci, "VOTE", {"sandi": enkripsi_pilihan(nomor, self.kunci_pemilu[1])}, voter_id=nim)
 
     def test_contract_belum_dideploy_ditolak(self):
         ok, alasan = KonteksRantai().terapkan(self._panggil(self.admin, "tambah_paslon", {"nomor": 1, "nama": "A"}))
@@ -53,7 +68,7 @@ class TestKonteksRantai(unittest.TestCase):
         ok, alasan = k.terapkan(self._panggil(self.penyerang, "hapus_paslon", {"id": 1}))
         self.assertFalse(ok)
         self.assertIn("pemilik", alasan)
-        self.assertTrue(k.paslon[0]["aktif"])
+        self.assertTrue(k.state["paslon"][0]["aktif"])
 
     def test_deploy_kedua_ditolak(self):
         k = self._konteks_dengan_paslon()
@@ -68,24 +83,25 @@ class TestKonteksRantai(unittest.TestCase):
         ok, alasan = k.terapkan(lama)
         self.assertFalse(ok)
         self.assertIn("replay", alasan)
-        self.assertEqual(k.paslon[0]["nama"], "Baru")
+        self.assertEqual(k.state["paslon"][0]["nama"], "Baru")
 
     def test_vote_ganda_dan_input_aneh_ditolak(self):
-        k = self._konteks_dengan_paslon()
         pemilih = buat_kunci()
-        self.assertTrue(k.terapkan(self._tx(pemilih, "VOTE", voter_id="F55125001", kandidat=1))[0])
-        for voter_id, kandidat in (("F55125001", 1), ("f55125001", 1), (" F55125001", 1),
-                                   ("F55125002", True), ("F55125002", "1"), ("F55125002", 9)):
-            ok, _ = k.terapkan(self._tx(pemilih, "VOTE", voter_id=voter_id, kandidat=kandidat))
-            self.assertFalse(ok, (voter_id, kandidat))
+        k = self._konteks_dibuka({"F55125001": pemilih})
+        self.assertTrue(k.terapkan(self._vote(pemilih, "F55125001"))[0])
+        for voter_id in ("F55125001", "f55125001", " F55125001", "F55125002"):
+            ok, _ = k.terapkan(self._vote(pemilih, voter_id))
+            self.assertFalse(ok, voter_id)
 
     def test_semua_angkatan_boleh_memilih(self):
         # batas semester 3-7 hanya untuk calon, bukan pemilih
-        k = self._konteks_dengan_paslon()
-        pemilih = buat_kunci()
-        for nim in ("F55119001", "A12122001", "F55126001"):
-            self.assertTrue(k.terapkan(self._tx(pemilih, "VOTE", voter_id=nim, kandidat=1))[0], nim)
-        self.assertFalse(k.terapkan(self._tx(pemilih, "VOTE", voter_id="Z55125001", kandidat=1))[0])
+        pemilih = {nim: buat_kunci() for nim in ("F55119001", "A12122001", "F55126001")}
+        k = self._konteks_dibuka(pemilih)
+        for nim, kunci in pemilih.items():
+            self.assertTrue(k.terapkan(self._vote(kunci, nim))[0], nim)
+        lain = buat_kunci()
+        self.assertFalse(k.terapkan(self._tx(self.admin, "REGISTER", {"nim": "Z55125001", "public_key": lain[1]}))[0])
+        self.assertFalse(k.terapkan(self._vote(lain, "Z55125001"))[0])
 
     def test_tipe_tidak_dikenal_ditolak(self):
         ok, alasan = KonteksRantai().terapkan(self._tx(self.admin, "MINT", {}))
