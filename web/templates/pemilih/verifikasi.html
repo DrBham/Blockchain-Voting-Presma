@@ -1,0 +1,24 @@
+{% set langkah = 2 %}
+{% extends "base_pemilih.html" %}
+{% block title %}Verifikasi email{% endblock %}
+{% block content %}
+<p class="eyebrow">Langkah 2 · Akun</p>
+<h1>Cek email kampusmu</h1>
+<p class="lead">Kode 6 digit dikirim ke <b style="font-weight:500;color:var(--ink)">{{ email }}</b>. Masukkan kode itu untuk mengaktifkan akun. Simpan kodenya: kode yang sama dipakai untuk masuk dan memilih</p>
+
+<section class="card stack" style="margin-top:24px" aria-labelledby="judul-kode">
+  <h2 id="judul-kode">Kode pemilih</h2>
+  <form method="post" id="form-kode" data-otomatis novalidate>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% with label_id = "judul-kode", salah = galat %}{% include "pemilih/_otp.html" %}{% endwith %}
+    <p class="msg{{ ' bad' if galat }}" id="otp-msg" aria-live="polite" style="margin-top:12px">{{ galat or 'Kode diperiksa otomatis begitu 6 digit terisi' }}</p>
+    <noscript><div class="actions"><button class="btn btn-primary" type="submit">Aktifkan akun</button></div></noscript>
+  </form>
+  <form method="post" class="small soft">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    Belum menerima email? <button class="linkish" type="submit" name="aksi" value="kirim_ulang" data-sisa="{{ sisa }}">Kirim ulang kode</button>
+  </form>
+  <div class="note" data-icon="mail"><p>Di demo ini email tidak keluar dari komputer. Buka kotak masuk Mailpit di port 8025, atau lihat terminal web kalau Mailpit tidak berjalan</p></div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='pemilih.js') }}"></script>{% endblock %}

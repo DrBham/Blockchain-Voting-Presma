@@ -1,0 +1,49 @@
+{% set langkah = 1 %}
+{% extends "base_pemilih.html" %}
+{% block title %}Daftar akun{% endblock %}
+{% block content %}
+<p class="eyebrow">Langkah 1 · Akun</p>
+<h1>Buat akun pemilih</h1>
+<p class="lead">Kode pemilih dikirim ke email kampus NIM-mu sebagai bukti kamu mahasiswa aktif. Server juga membuat dompet berisi sepasang kunci RSA. Kunci publik dicatat panitia ke chain, kunci privat dikunci dengan password-mu dan dipakai untuk menandatangani suara</p>
+
+<form class="card stack-lg" id="form-daftar" method="post" novalidate style="margin-top:24px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div>
+    <div class="field">
+      <label class="label" for="nim">NIM</label>
+      <input class="input mono{{ ' bad' if galat.nim }}" id="nim" name="nim" value="{{ nim }}" autocomplete="username" placeholder="F55124111" maxlength="9" aria-describedby="nim-msg" required{% if galat.nim %} aria-invalid="true" autofocus{% endif %}>
+      <p class="msg{{ ' bad' if galat.nim }}" id="nim-msg" aria-live="polite">{{ galat.nim or '' }}</p>
+    </div>
+    <div class="field">
+      <label class="label" for="email">Email kampus</label>
+      <input class="input mono" id="email" type="email" value="{{ nim ~ '@untad.ac.id' if nim else '' }}" placeholder="F55124111@untad.ac.id" aria-describedby="email-msg" readonly>
+      <p class="msg" id="email-msg">Terisi otomatis dari NIM. Kode pemilih dikirim ke alamat ini</p>
+    </div>
+    <div class="field">
+      <label class="label" for="pw">Password</label>
+      <div class="input-wrap">
+        <input class="input{{ ' bad' if galat.pw }}" id="pw" name="pw" type="password" autocomplete="new-password" minlength="8" aria-describedby="pw-msg" required>
+        <button class="peek" type="button" data-peek="pw" aria-controls="pw">Tampilkan</button>
+      </div>
+      <div class="meter" id="meter" data-s="0" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <p class="msg{{ ' bad' if galat.pw }}" id="pw-msg" aria-live="polite">{{ galat.pw or 'Minimal 8 karakter' }}</p>
+    </div>
+    <div class="field">
+      <label class="label" for="pw2">Ulangi password</label>
+      <div class="input-wrap">
+        <input class="input{{ ' bad' if galat.pw2 }}" id="pw2" name="pw2" type="password" autocomplete="new-password" aria-describedby="pw2-msg" required>
+        <button class="peek" type="button" data-peek="pw2" aria-controls="pw2">Tampilkan</button>
+      </div>
+      <p class="msg{{ ' bad' if galat.pw2 }}" id="pw2-msg" aria-live="polite">{{ galat.pw2 or '' }}</p>
+    </div>
+  </div>
+
+  <div class="note" data-icon="lock"><p>Password juga mengunci kunci privatmu. Panitia tidak menyimpan password dan tidak bisa memulihkannya</p></div>
+
+  <div class="actions" style="margin-top:0">
+    <button class="btn btn-primary" type="submit">Daftar dan buat dompet</button>
+  </div>
+  <p class="alt">Sudah punya akun? <a href="{{ url_for('pemilih.masuk') }}">Masuk</a></p>
+</form>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='pemilih.js') }}"></script>{% endblock %}

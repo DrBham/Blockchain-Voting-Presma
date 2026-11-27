@@ -1,0 +1,48 @@
+{% set langkah = 3 %}
+{% extends "base_pemilih.html" %}
+{% block title %}Masuk{% endblock %}
+{% block content %}
+<p class="eyebrow">Langkah 3 · Masuk</p>
+<h1>Masuk ke bilik suara</h1>
+{% if sudah_memilih %}
+<section class="card stack" style="margin-top:24px">
+  <p class="tag ok">Kamu sudah memilih</p>
+  <p class="soft">NIM {{ nim }} sudah memakai kode pemilihnya. Satu NIM hanya satu suara, jadi bilik tidak dibuka lagi</p>
+  <div class="actions">
+    <a class="btn btn-primary" href="{{ url_for('pemilih.bukti') }}">Lihat bukti suara</a>
+    <a class="btn btn-secondary" href="{{ url_for('publik.papan') }}">Papan pemilihan</a>
+  </div>
+</section>
+{% else %}
+<p class="lead">Pakai NIM, password, dan kode pemilih dari email pendaftaran. Setelah masuk, bilik suara langsung terbuka</p>
+
+<form class="card" id="form-masuk" method="post" novalidate style="margin-top:24px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="field">
+    <label class="label" for="nim">NIM</label>
+    <input class="input mono" id="nim" name="nim" value="{{ nim }}" autocomplete="username" placeholder="F55124111" maxlength="9" aria-describedby="nim-msg" required>
+    <p class="msg" id="nim-msg" aria-live="polite"></p>
+  </div>
+  <div class="field">
+    <label class="label" for="pw">Password</label>
+    <div class="input-wrap">
+      <input class="input{{ ' bad' if galat.pw }}" id="pw" name="pw" type="password" autocomplete="current-password" aria-describedby="pw-msg" required{% if galat.pw %} aria-invalid="true" autofocus{% endif %}>
+      <button class="peek" type="button" data-peek="pw" aria-controls="pw">Tampilkan</button>
+    </div>
+    <p class="msg{{ ' bad' if galat.pw }}" id="pw-msg" aria-live="polite">{{ galat.pw or '' }}</p>
+  </div>
+  <div class="field">
+    <span class="label" id="kode-label">Kode pemilih</span>
+    {% with label_id = "kode-label", salah = galat.kode %}{% include "pemilih/_otp.html" %}{% endwith %}
+    <p class="msg{{ ' bad' if galat.kode }}" id="otp-msg" aria-live="polite">{{ galat.kode or 'Kode 6 digit dari email saat mendaftar. Hanya berlaku untuk satu kali memilih' }}</p>
+  </div>
+  <div class="note" data-icon="key" style="margin-top:8px"><p>Password ini juga membuka kunci privat di dompetmu. Tanpa password, suara tidak bisa ditandatangani</p></div>
+  <div class="actions">
+    <button class="btn btn-primary btn-block" type="submit" name="aksi" value="masuk">Masuk dan buka bilik</button>
+  </div>
+  <p class="small soft" style="margin-top:12px">Lupa kodenya? Isi NIM dan password, lalu <button class="linkish" type="submit" name="aksi" value="kirim_ulang">kirim kode baru ke email</button></p>
+  <p class="alt">Belum punya akun? <a href="{{ url_for('pemilih.daftar') }}">Daftar</a> · <a href="{{ url_for('panitia.masuk') }}">Masuk sebagai panitia</a></p>
+</form>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='pemilih.js') }}"></script>{% endblock %}

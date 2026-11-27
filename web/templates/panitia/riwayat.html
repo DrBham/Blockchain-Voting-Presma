@@ -1,0 +1,42 @@
+{% extends "base_panitia.html" %}
+{% set menu = 'dasbor' %}
+{% block title %}Riwayat Paslon{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='panitia.css') }}">{% endblock %}
+{% set LABEL = {'tambah_paslon': 'Ditambahkan', 'ubah_paslon': 'Diubah', 'hapus_paslon': 'Dinonaktifkan'} %}
+{% set KOLOM = [('nomor', 'Nomor'), ('nama', 'Nama'), ('visi', 'Visi'), ('aktif', 'Aktif')] %}
+{% macro nilai(p, k) -%}
+{%- if p is none -%}—{%- elif k == 'aktif' -%}{{ 'Ya' if p.aktif else 'Tidak' }}{%- else -%}{{ p[k] if p[k] not in (none, '') else '—' }}{%- endif -%}
+{%- endmacro %}
+{% block content %}
+<div class="work-head">
+  <div>
+    <p class="eyebrow"><a href="{{ url_for('panitia.dasbor') }}">Dasbor</a> · Riwayat</p>
+    <h1>Riwayat Paslon {{ paslon.nomor if paslon else '#' ~ pid }}</h1>
+    <p class="lead">Dibaca ulang dari chain dengan riwayat_paslon: setiap CONTRACT_CALL sah untuk Paslon ini, dengan nilai sebelum dan sesudah</p>
+  </div>
+  {% if paslon %}<span class="tag {{ 'ok' if paslon.aktif else 'off' }}">{{ 'Aktif' if paslon.aktif else 'Nonaktif' }}</span>{% endif %}
+</div>
+
+<ol class="riwayat stack">
+  {% for r in riwayat | reverse %}
+  <li class="card">
+    <div class="card-head">
+      <div><h2>{{ LABEL.get(r.fungsi, r.fungsi) }} di block #{{ r.block }}</h2><p>{{ r.waktu }} · <span class="mono">{{ r.fungsi }}</span></p></div>
+    </div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th scope="col">Kolom</th><th scope="col">Sebelum</th><th scope="col">Sesudah</th></tr></thead>
+        <tbody>
+          {% for k, judul in KOLOM %}
+          {% set beda = r.sebelum is none or r.sebelum[k] != r.sesudah[k] %}
+          <tr class="{{ 'beda' if beda else '' }}"><th scope="row" class="soft">{{ judul }}</th><td class="{{ 'muted' if beda else '' }}">{{ nilai(r.sebelum, k) }}</td><td>{{ nilai(r.sesudah, k) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </li>
+  {% else %}
+  <li class="note">Tidak ada riwayat untuk Paslon ini di chain</li>
+  {% endfor %}
+</ol>
+{% endblock %}

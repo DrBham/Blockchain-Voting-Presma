@@ -1,0 +1,9 @@
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+  <div class="stack" style="margin-bottom:16px" role="status">
+    {% for cat, msg in messages %}
+      <div class="note {{ 'bad' if cat == 'danger' else '' }}"><p>{{ msg }}</p></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+{% endwith %}

@@ -1,0 +1,18 @@
+{% extends "base_panitia.html" %}
+{% set menu = 'papan' %}
+{% block title %}Papan pemilihan{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='panitia.css') }}">{% endblock %}
+{% block content %}
+<div class="work-head">
+  <div>
+    <p class="eyebrow">Publik · diperbarui tiap 3 detik dari node</p>
+    <h1>Papan pemilihan</h1>
+    <p class="lead">Pemilihan Presiden Mahasiswa 2026. Angka per Paslon baru muncul setelah pemungutan ditutup dan kunci pemilu dibuka ke chain</p>
+  </div>
+  <span id="papan-status" class="tag off">Memuat</span>
+</div>
+<div id="papan" class="stack" aria-live="polite" data-api="{{ url_for('publik.api_papan') }}" data-explorer="{{ url_for('publik.explorer') }}">
+  <p class="note">Memuat data dari node</p>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='papan.js') }}"></script>{% endblock %}

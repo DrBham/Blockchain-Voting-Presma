@@ -1,30 +1,25 @@
 <!doctype html>
 <html lang="id">
 <head>
-  <meta charset="utf-8">
-  <title>Presma Voting Blockchain</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Pemira Presma{% endblock %} · Pemira Presma</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<link rel="icon" href="{{ url_for('static', filename='logo-untad.png') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<meta name="csrf-token" content="{{ csrf_token() }}">
+{% block head %}{% endblock %}
 </head>
 <body>
-<nav class="navbar navbar-dark bg-dark mb-4">
-  <div class="container">
-    <a class="navbar-brand" href="/">Presma Voting</a>
-    <div>
-      <a class="btn btn-sm btn-outline-light" href="/paslon">Paslon</a>
-      <a class="btn btn-sm btn-outline-light" href="/chain/verify">Verify</a>
-      <a class="btn btn-sm btn-outline-light" href="/node/status">Node</a>
-    </div>
-  </div>
-</nav>
-<div class="container">
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-      {% for cat, msg in messages %}
-        <div class="alert alert-{{ cat }}">{{ msg }}</div>
-      {% endfor %}
-    {% endif %}
-  {% endwith %}
+{% block layout %}
+<main class="stage" id="isi"><div class="stage-inner enter">
+  {% include "_pesan.html" %}
   {% block content %}{% endblock %}
-</div>
+</div></main>
+{% endblock %}
+{% block scripts %}{% endblock %}
 </body>
 </html>

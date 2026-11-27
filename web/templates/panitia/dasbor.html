@@ -1,0 +1,187 @@
+{% extends "base_panitia.html" %}
+{% set menu = 'dasbor' %}
+{% block title %}Dasbor panitia{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='panitia.css') }}">{% endblock %}
+{% macro tombol(endpoint, label, kelas='btn-primary', konfirmasi=None) -%}
+<form method="post" action="{{ url_for(endpoint) }}" {% if konfirmasi %}data-konfirmasi="{{ konfirmasi }}"{% endif %}>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button class="btn {{ kelas }} btn-sm" type="submit">{{ label }}</button>
+</form>
+{%- endmacro %}
+{% set status = info.status if info else None %}
+{% set bisa_ubah = status in (None, 'persiapan') %}
+{% block content %}
+<div class="work-head">
+  <div>
+    <p class="eyebrow">Panitia · KPU Mahasiswa</p>
+    <h1>Dasbor pemilihan</h1>
+    <p class="lead">{% if alamat_contract %}PaslonContract di alamat <span class="mono">{{ alamat_contract[:12] }}…{{ alamat_contract[-4:] }}</span>{% elif info %}Contract belum dideploy ke chain{% else %}Node tidak terjangkau di {{ config.NODE_URL }}{% endif %}</p>
+  </div>
+  <div class="row">
+    {% if info %}<span class="tag {{ {'dibuka': 'ok', 'ditutup': 'wait', 'dihitung': 'ok'}.get(status, 'off') }}">{{ LABEL_STATUS.get(status, status) }}</span>{% endif %}
+    {% if info and not alamat_contract %}{{ tombol('panitia.deploy', 'Deploy contract') }}
+    {% elif status == 'persiapan' %}{{ tombol('panitia.buka', 'Buka pemungutan', konfirmasi='Buka pemungutan? Paslon tidak bisa diubah lagi setelah ini') }}
+    {% elif status == 'dibuka' %}{{ tombol('panitia.tutup', 'Tutup pemungutan', konfirmasi='Tutup pemungutan? Isi pool ditambang dulu, lalu suara baru ditolak') }}
+    {% elif status == 'ditutup' %}{{ tombol('panitia.hitung', 'Buka kunci dan hitung', konfirmasi='Buka kunci pemilu ke chain? Setelah ini siapa pun bisa menghitung suara') }}
+    {% elif status == 'dihitung' %}<a class="btn btn-primary btn-sm" href="{{ url_for('publik.papan') }}">Lihat hasil</a>{% endif %}
+  </div>
+</div>
+
+<div class="stack">
+  <section class="grid g-stats" aria-label="Ringkasan">
+    <div class="card tight stat"><p class="stat-label">Panjang chain</p><p class="stat-value num">{{ info.panjang if info else '—' }}</p><p class="stat-meta">{% if info %}Block terakhir #{{ info.block_terakhir.index }}{% else %}Node tidak terjangkau{% endif %}</p></div>
+    <div class="card tight stat"><p class="stat-label">Pemilih terdaftar</p><p class="stat-value num">{{ info.terdaftar if info else '—' }}</p><p class="stat-meta">{% if menunggu %}{{ menunggu }} akun menunggu dicatat{% else %}Tercatat lewat transaksi REGISTER{% endif %}</p></div>
+    <div class="card tight stat lead-stat"><p class="stat-label">Suara masuk</p><p class="stat-value num">{{ info.suara_masuk if info else '—' }}</p><p class="stat-meta">{% if info and info.terdaftar %}{{ (100 * info.suara_masuk / info.terdaftar) | round | int }}% dari pemilih terdaftar{% else %}Belum ada pemilih terdaftar{% endif %}</p></div>
+    {% set hidup = nodes | selectattr('status') | list | length %}
+    <div class="card tight stat"><p class="stat-label">Node aktif</p><p class="stat-value num">{{ hidup }}<span class="muted" style="font-size:20px"> / {{ nodes | length }}</span></p><p class="stat-meta">{% if hidup < nodes | length %}{{ nodes | length - hidup }} node tidak merespons{% else %}Semua node merespons{% endif %}</p></div>
+  </section>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <section class="card" aria-labelledby="h-antrean">
+        <div class="card-head">
+          <div><h2 id="h-antrean">Antrean registrasi ke chain</h2><p>Pemilih yang sudah verifikasi email, dicatat sebagai transaksi REGISTER</p></div>
+          {% if menunggu %}{{ tombol('panitia.catat', 'Catat ' ~ menunggu ~ ' ke chain') }}{% else %}<button class="btn btn-primary btn-sm" type="button" disabled>Semua tercatat</button>{% endif %}
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th scope="col">NIM</th><th scope="col">Kunci publik</th><th scope="col">Status</th></tr></thead>
+            <tbody>
+              {% for a in antrean %}
+              {% set hex = a.kunci.replace('-----BEGIN PUBLIC KEY-----', '').replace('-----END PUBLIC KEY-----', '').replace('\n', '') %}
+              <tr><td class="mono">{{ a.nim }}</td><td class="mono">{{ hex[:8] }}…{{ hex[-4:] }}</td><td>{% if a.tercatat %}<span class="tag ok">Tercatat</span>{% else %}<span class="tag wait">Menunggu</span>{% endif %}</td></tr>
+              {% else %}
+              <tr><td colspan="3" class="muted">Belum ada pemilih yang menyelesaikan verifikasi email</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="h-paslon" id="paslon">
+        <div class="card-head">
+          <div><h2 id="h-paslon">Pasangan calon</h2><p>Dikelola PaslonContract di chain. Tabel ini indeks dari chain, bangun ulang kapan saja</p></div>
+          {{ tombol('panitia.rebuild', 'Rebuild state dari chain', 'btn-secondary') }}
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th scope="col">No</th><th scope="col">Nama tampilan</th><th scope="col">Block</th><th scope="col" class="r">Aksi</th></tr></thead>
+            <tbody>
+              {% for p in aktif %}
+              <tr>
+                <td><span class="paslon-no">{{ p.nomor }}</span></td>
+                <td>{{ p.nama }}{% if p.visi %}<br><span class="small muted">{{ p.visi }}</span>{% endif %}</td>
+                <td class="num soft">#{{ p.block_number }}</td>
+                <td><div class="row aksi">
+                  <a class="btn btn-ghost btn-sm" href="{{ url_for('panitia.paslon_riwayat', pid=p.id) }}">Riwayat</a>
+                  {% if bisa_ubah %}
+                  <button class="btn btn-secondary btn-sm" type="button" data-ubah="{{ p.id }}" aria-expanded="false" aria-controls="ubah-{{ p.id }}">Ubah</button>
+                  <form method="post" action="{{ url_for('panitia.paslon_hapus', pid=p.id) }}" data-konfirmasi="Nonaktifkan Paslon {{ p.nomor }}? Riwayatnya tetap di chain">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-danger btn-sm" type="submit">Hapus</button>
+                  </form>
+                  {% endif %}
+                </div></td>
+              </tr>
+              {% if bisa_ubah %}
+              <tr class="ubah-row" id="ubah-{{ p.id }}" hidden><td colspan="4">
+                <form class="row form-paslon" method="post" action="{{ url_for('panitia.paslon_ubah', pid=p.id) }}" aria-label="Ubah Paslon {{ p.nomor }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <div class="field f-no"><label class="label" for="no-{{ p.id }}">Nomor urut</label><input class="input num" id="no-{{ p.id }}" name="nomor" type="number" min="1" value="{{ p.nomor }}" required></div>
+                  <div class="field f-nama"><label class="label" for="nama-{{ p.id }}">Nama tampilan</label><input class="input" id="nama-{{ p.id }}" name="nama" value="{{ p.nama }}" maxlength="120" required></div>
+                  <div class="field f-nama"><label class="label" for="visi-{{ p.id }}">Visi</label><input class="input" id="visi-{{ p.id }}" name="visi" value="{{ p.visi }}" maxlength="500"></div>
+                  <button class="btn btn-primary btn-sm" type="submit">Simpan</button>
+                  <button class="btn btn-ghost btn-sm" type="button" data-ubah="{{ p.id }}">Batal</button>
+                </form>
+              </td></tr>
+              {% endif %}
+              {% else %}
+              <tr><td colspan="4" class="muted">Belum ada Paslon aktif. {% if bisa_ubah %}Tambah lewat form di bawah, atau rebuild kalau Paslon dibuat di luar web (seed atau CLI){% endif %}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        {% if nonaktif %}
+        <h3 class="sub-head">Nonaktif</h3>
+        <div class="table-wrap">
+          <table class="table nonaktif">
+            <tbody>
+              {% for p in nonaktif %}
+              <tr>
+                <td><span class="paslon-no">{{ p.nomor }}</span></td>
+                <td>{{ p.nama }}<br><span class="tag off">Nonaktif sejak block #{{ p.block_number }}</span></td>
+                <td class="r"><a class="btn btn-ghost btn-sm" href="{{ url_for('panitia.paslon_riwayat', pid=p.id) }}">Riwayat</a></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+
+        {% if bisa_ubah %}
+        <form class="row form-paslon form-tambah" method="post" action="{{ url_for('panitia.paslon_tambah') }}" aria-label="Tambah pasangan calon">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="field f-no"><label class="label" for="no">Nomor urut</label><input class="input num" id="no" name="nomor" type="number" min="1" value="{{ nomor_baru }}" required></div>
+          <div class="field f-nama"><label class="label" for="nama">Nama tampilan</label><input class="input" id="nama" name="nama" maxlength="120" placeholder="Nama ketua & wakil" required></div>
+          <div class="field f-nama"><label class="label" for="visi">Visi</label><input class="input" id="visi" name="visi" maxlength="500"></div>
+          <button class="btn btn-secondary" type="submit">Tambah paslon</button>
+        </form>
+        <p class="hint" style="margin-top:8px">Setiap perubahan dikirim sebagai transaksi CONTRACT_CALL dari kunci admin, lalu ditambang ke block baru. Contract menolak nomor yang sudah dipakai Paslon aktif</p>
+        {% else %}
+        <p class="note" style="margin-top:16px">Paslon terkunci karena status {{ LABEL_STATUS.get(status, status) | lower }}. Contract hanya menerima perubahan Paslon saat persiapan</p>
+        {% endif %}
+      </section>
+    </div>
+
+    <div class="stack">
+      <section class="card" aria-labelledby="h-valid">
+        <h2 id="h-valid">Validitas chain</h2>
+        {% if verify %}
+          {% if verify.valid %}
+          <div class="note" style="margin-top:16px"><div><strong class="ink">{{ verify.panjang }} block valid</strong><br>Hash, prev hash, proof of work, dan semua tanda tangan cocok</div></div>
+          {% else %}
+          <div class="note bad" style="margin-top:16px" role="alert"><div><strong class="ink">Rusak mulai block #{{ verify.index_rusak }}</strong><br>{{ verify.alasan }}</div></div>
+          {% endif %}
+        {% else %}
+          <p class="small muted" style="margin-top:16px">Belum dicek di halaman ini. Verify meminta node memeriksa ulang setiap block dari genesis</p>
+        {% endif %}
+        <div class="spread" style="margin-top:12px">
+          <p class="small muted">{% if verify %}Dicek {{ verify.waktu }}{% endif %}</p>
+          <div class="row">
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('publik.explorer') }}">Uji ubah block</a>
+            <a class="btn btn-secondary btn-sm" href="{{ url_for('panitia.verify') }}">Verify chain</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="h-node">
+        <div class="card-head"><h2 id="h-node">Node</h2><a class="small" href="{{ url_for('publik.explorer') }}">Buka explorer</a></div>
+        <table class="table">
+          <tbody>
+            {% for n in nodes %}
+            <tr>
+              <td><span class="tag {{ 'ok' if n.status else 'off' }}">{{ 'Node web' if n.ini else 'Peer' }}</span><br><span class="mono muted">{{ n.alamat.replace('http://', '') }}</span></td>
+              <td class="r small soft">{% if n.status %}Aktif<br><span class="num muted">{{ n.status.panjang }} block</span>{% else %}Tidak merespons<br><span class="num muted">—</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+
+      {% if info and alamat_contract %}
+      <section class="card" aria-labelledby="h-tahap">
+        <h2 id="h-tahap">Tahap pemilihan</h2>
+        <ol class="tahap">
+          {% for kunci in ['persiapan', 'dibuka', 'ditutup', 'dihitung'] %}
+          <li class="{{ 'now' if kunci == status else '' }}">{{ LABEL_STATUS[kunci] }}</li>
+          {% endfor %}
+        </ol>
+        <p class="hint" style="margin-top:12px">Buka pemungutan butuh minimal 2 Paslon aktif bernomor urut mulai 1. Kunci pemilu dibaca dari berkas panitia saat dihitung</p>
+      </section>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='panitia.js') }}"></script>{% endblock %}

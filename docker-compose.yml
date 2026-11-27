@@ -2,7 +2,7 @@ services:
   node1:
     build: .
     container_name: node1
-    command: ["python", "node.py", "5000", "node2:5000,node3:5000"]
+    command: ["python", "menu_node.py", "5000", "node2:5000,node3:5000"]
     ports:
       - "5001:5000"
     networks:
@@ -11,7 +11,7 @@ services:
   node2:
     build: .
     container_name: node2
-    command: ["python", "node.py", "5000", "node1:5000,node3:5000"]
+    command: ["python", "menu_node.py", "5000", "node1:5000,node3:5000"]
     ports:
       - "5002:5000"
     networks:
@@ -20,11 +20,19 @@ services:
   node3:
     build: .
     container_name: node3
-    command: ["python", "node.py", "5000", "node1:5000,node2:5000"]
+    command: ["python", "menu_node.py", "5000", "node1:5000,node2:5000"]
     ports:
       - "5003:5000"
     networks:
       - blockchain-net
+
+  # Kotak masuk email lokal untuk kode pemilih: SMTP 1025, tampilan web http://localhost:8025
+  mailpit:
+    image: axllent/mailpit
+    container_name: mailpit
+    ports:
+      - "1025:1025"
+      - "8025:8025"
 
 networks:
   blockchain-net:

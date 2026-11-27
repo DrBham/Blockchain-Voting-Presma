@@ -1,0 +1,84 @@
+{% extends "base_panitia.html" %}
+{% from "publik/_pow.html" import pow %}
+{% set menu = 'explorer' %}
+{% block title %}Explorer chain{% endblock %}
+{% block content %}
+<div class="work-head">
+  <div>
+    <p class="eyebrow">Publik · data dari {{ config.NODE_URL.replace('http://', '') }}</p>
+    <h1>Explorer chain</h1>
+    <p class="lead">Setiap block menyimpan hash block sebelumnya. Pilihan di dalam suara terenkripsi kunci pemilu, yang tampil hanya NIM dan potongan sandinya</p>
+  </div>
+</div>
+
+{% if not data %}
+<p class="note bad" role="alert">Chain tidak bisa dibaca dari node. Pastikan node berjalan di {{ config.NODE_URL }}</p>
+{% else %}
+{% set d = data.difficulty %}
+<div class="stack">
+  <section class="card tight" aria-label="Ringkasan chain">
+    <div class="spread">
+      <form class="field" role="search" method="get" style="flex:1;min-width:220px;max-width:360px">
+        <label class="sr" for="cari">Cari block</label>
+        <input class="input" id="cari" name="q" type="search" value="{{ q }}" placeholder="#3 atau {{ '0' * d }}a81f" autocomplete="off">
+      </form>
+      <div class="row small soft">
+        {% if data.valid %}<span class="tag ok">Chain valid</span>
+        {% elif data.valid is none %}<span class="tag off">Validasi tidak tersedia</span>
+        {% else %}<span class="tag bad">Rusak mulai block #{{ data.index_rusak }}</span>{% endif %}
+        <span>Panjang <b class="num ink">{{ data.panjang }}</b></span>
+        <span>Difficulty {{ d }} · hash diawali <span class="mono pow">{{ '0' * d }}</span></span>
+      </div>
+    </div>
+  </section>
+
+  {% if data.valid == false %}
+  <p class="note bad" role="alert">Block #{{ data.index_rusak }} tidak cocok lagi: {{ data.alasan }}. Block sesudahnya ikut tidak sah karena prev hash mereka menunjuk ke isi lama</p>
+  {% elif panitia_masuk() %}
+  <p class="note">Coba ubah isi sebuah block untuk melihat validasi mendeteksinya. Buka block, lalu pilih "Uji: ubah isi block ini"</p>
+  {% endif %}
+  {% if q %}<p class="small soft">Hasil pencarian "{{ q }}" · <a href="{{ url_for('publik.explorer') }}">Tampilkan semua</a></p>{% endif %}
+
+  <div>
+    <div class="blocks-head" aria-hidden="true"><span>Block</span><span>Nonce</span><span>Hash</span><span>Prev hash</span><span>Tx</span><span>Status</span><span></span></div>
+    <ul class="blocks">
+      {% for b in data.blocks %}
+      <li><details class="block {{ 'broken' if b.rusak else '' }}" {% if q or b.rusak == 'ini' %}open{% endif %}>
+        <summary>
+          <span class="idx">#{{ b.index }}</span>
+          <span class="c-nonce num soft">{{ b.nonce }}</span>
+          <span class="c-hash mono trunc">{{ pow(b.hash, d) if b.index else b.hash }}</span>
+          <span class="c-prev mono trunc soft">{{ pow(b.previous_hash, d) if b.index else '—' }}</span>
+          <span class="c-tx num soft">{{ b.transaksi | length }}</span>
+          <span class="c-status">{% if b.rusak == 'ini' %}<span class="tag bad">Data berubah</span>{% elif b.rusak %}<span class="tag bad">Ikut tidak sah</span>{% else %}<span class="tag ok">Valid</span>{% endif %}</span>
+          <span class="chev"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span>
+        </summary>
+        <div class="block-detail">
+          <dl class="kv">
+            <dt>Hash</dt><dd class="mono">{{ pow(b.hash, d) if b.index else b.hash }}</dd>
+            <dt>Prev hash</dt><dd class="mono">{{ pow(b.previous_hash, d) if b.index else b.previous_hash }}</dd>
+            <dt>Waktu</dt><dd>{{ b.waktu }}</dd>
+            <dt>Transaksi</dt><dd>{% if not b.transaksi %}<span class="muted">{{ 'Genesis' if not b.index else 'Kosong' }}</span>{% endif %}
+              {% for tx in b.transaksi %}<div class="tx-row"><span class="tx-tipe mono">{{ tx.tipe }}</span> <span class="mono">{{ tx.isi }}</span><br><span class="small muted mono">tanda tangan {{ tx.signature }}…</span></div>{% endfor %}
+            </dd>
+          </dl>
+          {% if panitia_masuk() and b.index and b.transaksi and not b.rusak %}
+          <form class="row" method="post" action="{{ url_for('publik.tamper') }}" style="margin-top:12px" data-konfirmasi="Ubah isi block #{{ b.index }} di node tanpa menambang ulang? Chain node ini jadi tidak valid">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="index" value="{{ b.index }}">
+            <button class="btn btn-secondary btn-sm" type="submit">Uji: ubah isi block ini</button>
+          </form>
+          {% endif %}
+        </div>
+      </details></li>
+      {% else %}
+      <li class="note">Tidak ada block yang cocok</li>
+      {% endfor %}
+    </ul>
+    {% if not q and data.panjang > data.blocks | length %}<p class="small muted" style="margin-top:12px">Menampilkan {{ data.blocks | length }} block terbaru. Cari dengan #index untuk block lama</p>{% endif %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='panitia.css') }}">{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='panitia.js') }}"></script>{% endblock %}

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Masuk panitia{% endblock %}
+{% block content %}
+<p class="eyebrow">Panitia · KPU Mahasiswa</p>
+<h1>Masuk ruang panitia</h1>
+<p class="lead">Ruang panitia mengirim transaksi bertanda tangan kunci admin: deploy contract, kelola Paslon, catat registrasi, dan buka kunci pemilu</p>
+
+<form class="card" method="post" action="{{ url_for('panitia.masuk', lanjut=request.args.get('lanjut')) }}" style="margin-top:24px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="field">
+    <label class="label" for="password">Password panitia</label>
+    <input class="input" id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+    <p class="hint">Diatur lewat variabel lingkungan PANITIA_PASSWORD</p>
+  </div>
+  <div class="actions">
+    <button class="btn btn-primary btn-block" type="submit">Masuk</button>
+  </div>
+  <p class="alt"><a href="{{ url_for('publik.beranda') }}">Kembali ke beranda</a> · <a href="{{ url_for('publik.papan') }}">Papan pemilihan</a></p>
+</form>
+{% endblock %}

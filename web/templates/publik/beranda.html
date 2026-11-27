@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% from "publik/_pow.html" import pow %}
+{% block title %}Beranda{% endblock %}
+{% block layout %}
+{% set ikon_panah = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>' %}
+<main class="home" id="isi">
+  <section class="home-text enter">
+    <a class="brand" href="{{ url_for('publik.beranda') }}"><img src="{{ url_for('static', filename='logo-untad.png') }}" alt="" width="30" height="31"><span><b>Pemira Presma</b><small>Pemilihan Presiden Mahasiswa 2026</small></span></a>
+    {% include "_pesan.html" %}
+    <div>
+      <h1>Pemilihan presma yang bisa kamu periksa sendiri</h1>
+      <p class="lead">Setiap suara ditandatangani dengan kunci RSA milik pemilih, dienkripsi dengan kunci pemilu, lalu dikunci ke block dengan proof of work dan disalin di setiap node. Blockchain-nya ditulis dari nol</p>
+    </div>
+    <nav class="doors" aria-label="Pilih peran">
+      <a class="door main" href="{{ url_for('pemilih.daftar') }}"><span class="ic"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span><span><b>Mulai sebagai pemilih</b><span>Daftar, simpan kode pemilih, lalu coblos</span></span>{{ ikon_panah | safe }}</a>
+      <a class="door" href="{{ url_for('publik.papan') }}"><span class="ic"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span><span><b>Papan pemilihan</b><span>Suara masuk, partisipasi, dan hasil setelah dihitung</span></span>{{ ikon_panah | safe }}</a>
+      <a class="door" href="{{ url_for('publik.explorer') }}"><span class="ic"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><path d="M10 6.5h4a2 2 0 0 1 2 2V14"/></svg></span><span><b>Explorer chain</b><span>Telusuri block dan uji deteksi perubahan data</span></span>{{ ikon_panah | safe }}</a>
+      <a class="door" href="{{ url_for('panitia.dasbor') }}"><span class="ic"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span><span><b>Ruang panitia</b><span>Buka pemungutan, catat registrasi, kelola Paslon</span></span>{{ ikon_panah | safe }}</a>
+    </nav>
+    <div class="home-foot">
+      <p>Proyek mata kuliah Teknologi Blockchain, Universitas Tadulako. Bukan sistem resmi UNTAD.</p>
+    </div>
+  </section>
+
+  <aside class="home-viz" aria-label="Block terbaru">
+    {% set info = info_node() %}
+    <p class="small soft"><span class="tag {{ 'ok' if info else 'bad' }}">{% if info %}{{ LABEL_STATUS.get(info.status, info.status) }} · {{ info.panjang }} block{% else %}Node tidak terjangkau{% endif %}</span></p>
+    <div class="chainviz">
+      {% for b in terakhir %}
+      <div class="blk"><div class="top"><span>Block #{{ b.index }}</span><span class="soft">{{ b.transaksi | length }} transaksi</span></div><div class="trunc">{{ pow(b.hash, difficulty) if b.index else b.hash }}</div></div>
+      {% else %}
+      <p class="note">Chain belum bisa dibaca dari node</p>
+      {% endfor %}
+    </div>
+    <p class="small muted">Awalan <span class="mono pow">{{ '0' * difficulty }}</span> berarti proof of work terpenuhi: node mencoba nonce satu per satu sampai hash SHA-256 block diawali {{ difficulty }} nol</p>
+  </aside>
+</main>
+{% endblock %}

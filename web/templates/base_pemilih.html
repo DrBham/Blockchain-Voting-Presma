@@ -1,0 +1,37 @@
+{#- Kerangka pemilih: rel 5 langkah di kiri. Halaman anak mengisi `langkah` (1-5) dan blok `content`. -#}
+{% extends "base.html" %}
+{% set LANGKAH = [("pemilih.daftar", "Daftar akun"), ("pemilih.verifikasi", "Verifikasi email"),
+                  ("pemilih.masuk", "Masuk"), ("pemilih.bilik", "Bilik suara"), ("pemilih.bukti", "Bukti suara")] %}
+{% block layout %}
+{% set info = info_node() %}
+<div class="voter">
+  <aside class="rail" aria-label="Perjalanan pemilih">
+    <a class="brand" href="{{ url_for('publik.beranda') }}"><img src="{{ url_for('static', filename='logo-untad.png') }}" alt="" width="30" height="31"><span><b>Pemira Presma</b><small>Pemilihan Presiden Mahasiswa</small></span></a>
+    <div>
+      <p class="journey-label">Langkahmu</p>
+      <ol class="journey">
+        {% for endpoint, nama in LANGKAH %}
+          {% set n = loop.index %}
+          <li><span class="step {{ 'now' if n == langkah else ('done' if n < langkah else '') }}" {% if n == langkah %}aria-current="step"{% endif %}>
+            <span class="n">{{ '✓' if n < langkah else n }}</span><span>{{ nama }}</span></span></li>
+        {% endfor %}
+      </ol>
+    </div>
+    <div class="window">
+      <p class="small soft">Status pemilu</p>
+      <p class="clock" style="font-family:var(--font);font-size:18px">{{ LABEL_STATUS.get(info.status, 'Node tidak terjangkau') if info else 'Node tidak terjangkau' }}</p>
+      <p class="node-line"><span class="tag {{ 'ok' if info else 'bad' }}"></span>{% if info %}{{ info.panjang }} block · {{ info.suara_masuk }} suara masuk{% else %}cek NODE_URL{% endif %}</p>
+    </div>
+    <p class="rail-foot">Proyek mata kuliah Teknologi Blockchain. Bukan sistem resmi UNTAD.<br><a href="{{ url_for('publik.papan') }}">Papan pemilihan</a></p>
+  </aside>
+  <div class="mobilebar">
+    <div class="spread"><a class="brand" href="{{ url_for('publik.beranda') }}"><img src="{{ url_for('static', filename='logo-untad.png') }}" alt="" width="30" height="31"><b>Pemira Presma</b></a>
+    <span class="small soft">Langkah {{ langkah }} dari 5</span></div>
+    <div class="bar"><i style="width:{{ langkah * 20 }}%"></i></div>
+  </div>
+  <main class="stage" id="isi"><div class="stage-inner {% block lebar %}{% endblock %} enter">
+    {% include "_pesan.html" %}
+    {% block content %}{% endblock %}
+  </div></main>
+</div>
+{% endblock %}

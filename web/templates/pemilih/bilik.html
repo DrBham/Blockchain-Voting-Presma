@@ -1,0 +1,65 @@
+{% set langkah = 4 %}
+{% extends "base_pemilih.html" %}
+{% block title %}Bilik suara{% endblock %}
+{% block lebar %}wide{% endblock %}
+{% block content %}
+<p class="eyebrow">Langkah 4 · Pemungutan</p>
+<h1>Bilik suara</h1>
+{% if alasan %}
+<section class="card stack" style="margin-top:24px">
+  <p class="tag wait">Bilik belum bisa dipakai</p>
+  <p class="soft">{{ alasan }}</p>
+  <div class="actions">
+    <a class="btn btn-primary" href="{{ url_for('pemilih.bilik') }}">Muat ulang</a>
+    <a class="btn btn-secondary" href="{{ url_for('publik.papan') }}">Papan pemilihan</a>
+    <a class="btn btn-ghost" href="{{ url_for('pemilih.keluar') }}">Keluar</a>
+  </div>
+</section>
+{% else %}
+<p class="lead">Pilih satu pasangan calon. Setelah dikirim, suara tidak bisa diubah atau ditarik kembali</p>
+
+<form method="post" id="form-bilik">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <fieldset class="ballot">
+    <legend class="sr">Surat suara Pemilihan Presiden Mahasiswa</legend>
+    {% for p in paslon %}
+    <label class="choice">
+      <input type="radio" name="paslon" value="{{ p.nomor }}" data-nama="{{ p.nama }}" aria-label="Paslon {{ p.nomor }}, {{ p.nama }}" required>
+      <span class="paper"><span class="no">{{ p.nomor }}<span class="hole"></span></span><span class="name">{{ p.nama }}</span><span class="sub">{{ p.visi or 'Pasangan calon nomor urut ' ~ p.nomor }}</span></span>
+    </label>
+    {% endfor %}
+  </fieldset>
+
+  <div class="ballot-bar">
+    <p id="pilihan-teks" class="soft" aria-live="polite">Belum ada pilihan</p>
+    <button class="btn btn-primary" id="kirim" type="submit">Kirim suara</button>
+  </div>
+</form>
+
+<div class="note" style="margin-top:24px">
+  <span data-icon="key"></span>
+  <p>Pilihanmu dienkripsi dengan kunci pemilu, ditandatangani dengan kunci RSA milikmu, lalu dikirim ke node sebagai transaksi. Node menolak tanda tangan yang tidak cocok dan NIM yang sudah memilih</p>
+</div>
+<p class="small soft" style="margin-top:16px"><a href="{{ url_for('pemilih.keluar') }}">Keluar tanpa memilih</a></p>
+
+<dialog id="konfirmasi" aria-labelledby="dlg-judul">
+  <div class="dlg-body">
+    <h2 id="dlg-judul">Kirim suara ini?</h2>
+    <div class="picked">
+      <span class="no" id="dlg-no"></span>
+      <div><p id="dlg-nama"></p><p class="small muted">Tidak bisa diubah setelah dikirim</p></div>
+    </div>
+    <p class="soft" id="dlg-teks">Pastikan pilihanmu sudah benar. Pilih <b>Batal</b> untuk kembali ke surat suara dan memilih ulang</p>
+    <ol class="process" id="langkah-kirim" hidden>
+      <li class="run"><span class="dot"></span><span>Mengenkripsi dan menandatangani suara<small>kunci privat di memori server</small></span></li>
+      <li><span class="dot"></span><span>Mengirim transaksi ke node dan menambang<small>bisa beberapa detik</small></span></li>
+    </ol>
+  </div>
+  <div class="dlg-foot" id="dlg-foot">
+    <button class="btn btn-secondary" id="batal" type="button">Batal, pilih ulang</button>
+    <button class="btn btn-primary" id="setuju" type="button">Setuju, kirim suara</button>
+  </div>
+</dialog>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='pemilih.js') }}"></script>{% endblock %}

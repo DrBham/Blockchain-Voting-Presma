@@ -1,0 +1,55 @@
+{% set langkah = 5 %}
+{% extends "base_pemilih.html" %}
+{% block title %}Bukti suara{% endblock %}
+{% block lebar %}wide stack-lg{% endblock %}
+{% block content %}
+{% if signature %}
+<div id="bukti" data-api="{{ url_for('pemilih.tx_status') }}">
+  <p class="eyebrow">Langkah 5 · Transaksi diterima node</p>
+  <h1 id="judul" aria-live="polite">Menunggu ditambang</h1>
+  <p class="lead" id="sub">Suaramu sudah di pool. Node mencari nonce agar block baru sah</p>
+</div>
+
+<section class="card" aria-label="Penambangan block">
+  <div class="miner">
+    <div class="spread"><span class="k">nonce</span><span class="v" id="m-nonce">…</span></div>
+    <div><span class="k">hash</span><div class="v" id="m-hash" style="margin-top:4px">…</div></div>
+    <span id="m-state" class="k">menunggu block berikutnya</span>
+  </div>
+  <ol class="process" id="status" aria-live="polite">
+    <li class="ok"><span class="dot"></span><span>Masuk pool<small>transaksi diterima node</small></span></li>
+    <li class="run"><span class="dot"></span><span>Ditambang (proof of work)<small>mencoba nonce satu per satu</small></span></li>
+    <li><span class="dot"></span><span>Tercatat di chain<small>disiarkan ke semua node</small></span></li>
+  </ol>
+  <p class="msg" id="poll-msg" aria-live="polite"></p>
+</section>
+
+<section class="card" aria-labelledby="rincian-judul">
+  <div class="card-head"><h2 id="rincian-judul">Rincian bukti</h2><span class="tag wait" id="tag-bukti">Di pool</span></div>
+  <dl class="kv">
+    <dt>Tanda tangan</dt><dd class="mono" title="{{ signature }}">{{ signature[:16] }}…{{ signature[-8:] }}</dd>
+    <dt>Block</dt><dd class="num" id="b-index">belum ada</dd>
+  </dl>
+  <div class="note" style="margin-top:16px">
+    <span data-icon="lock"></span>
+    <p>Pilihanmu tidak ditampilkan di sini maupun di explorer. Yang terlihat publik hanya sandi pilihan dan tanda tangan transaksi</p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-primary" href="{{ url_for('publik.explorer') }}">Lihat di explorer</a>
+    <a class="btn btn-secondary" href="{{ url_for('publik.papan') }}">Papan pemilihan</a>
+    <a class="btn btn-ghost" href="{{ url_for('pemilih.keluar') }}">Keluar</a>
+  </div>
+</section>
+{% else %}
+<p class="eyebrow">Langkah 5 · Bukti</p>
+<h1>Bukti suara tidak ditemukan</h1>
+<section class="card stack" style="margin-top:24px">
+  <p class="soft">Kode pemilih NIM ini sudah terpakai, tetapi tanda tangan suaranya tidak tersimpan di web. Tanyakan ke panitia dan cek explorer</p>
+  <div class="actions">
+    <a class="btn btn-primary" href="{{ url_for('publik.explorer') }}">Lihat di explorer</a>
+    <a class="btn btn-ghost" href="{{ url_for('pemilih.keluar') }}">Keluar</a>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='pemilih.js') }}"></script>{% endblock %}

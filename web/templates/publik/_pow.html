@@ -1,0 +1,4 @@
+{#- Hash dengan awalan nol proof of work berwarna emas. Genesis tidak ditambang, jadi tanpa sorotan. -#}
+{% macro pow(h, d) -%}
+{%- if h and h.startswith('0' * d) -%}<span class="pow">{{ h[:d] }}</span>{{ h[d:] }}{%- else -%}{{ h }}{%- endif -%}
+{%- endmacro %}

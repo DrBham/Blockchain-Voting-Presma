@@ -1,0 +1,46 @@
+/* Tambahan ruang panitia, papan, dan explorer di atas style.css (mockup). */
+
+.ink { color: var(--ink); font-weight: 500; }
+.aksi { justify-content: flex-end; gap: 8px; flex-wrap: nowrap; }
+.aksi form { display: contents; }
+.work-head form, .card-head form { margin: 0; }
+
+.form-paslon { align-items: flex-end; }
+.form-paslon .field + .field { margin-top: 0; }
+.form-paslon .f-no { width: 110px; }
+.form-paslon .f-nama { flex: 1; min-width: 120px; }
+.form-tambah { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
+.table tr.ubah-row, .table tr.ubah-row:hover { background: var(--raised); }
+
+.sub-head { margin: 24px 0 4px; font-size: 13px; color: var(--muted); }
+.table.nonaktif td { color: var(--muted); }
+.table.nonaktif .paslon-no { background: var(--raised); color: var(--muted); }
+
+.tahap { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 4px; counter-reset: tahap; }
+.tahap li { counter-increment: tahap; display: flex; gap: 12px; align-items: center; padding: 8px 10px; border-radius: var(--r-sm); font-size: 14px; color: var(--muted); }
+.tahap li::before { content: counter(tahap); width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line); display: grid; place-items: center; font-size: 12px; }
+.tahap li.now { background: var(--raised); color: var(--ink); }
+.tahap li.now::before { background: var(--accent); border-color: transparent; color: var(--on-accent); }
+
+.riwayat { list-style: none; margin: 0; padding: 0; }
+.table tr.beda td:last-child { color: var(--ink); background: var(--gold-soft); }
+
+.g-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.g-paslon { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.per-jam { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.per-jam li { display: grid; grid-template-columns: 56px minmax(0, 1fr) 48px; gap: 12px; align-items: center; font-size: 13px; }
+.per-jam .bar { margin-top: 0; height: 8px; }
+.per-jam li > :last-child { text-align: right; }
+.hasil .stat-value { margin-top: 16px; font-size: 40px; }
+.hasil .bar { height: 8px; }
+.hasil.unggul { border-color: rgba(224, 163, 170, .35); }
+.hasil.unggul .stat-value { color: var(--accent-ink); }
+
+.tx-row + .tx-row { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line-soft); }
+.tx-tipe { color: var(--gold); }
+
+@media (max-width: 860px) {
+  .g-3 { grid-template-columns: minmax(0, 1fr); }
+}
+.riwayat .table { table-layout: fixed; }
+.stat-meta .trunc { display: block; }

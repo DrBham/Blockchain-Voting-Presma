@@ -1,0 +1,6 @@
+{#- Enam kotak kode pemilih. Tiap kotak bernama `kode`; server menggabungkan isinya. -#}
+<div class="otp{{ ' bad' if salah }}" id="otp" role="group" aria-labelledby="{{ label_id }}">
+  {% for i in range(1, 7) %}
+  <input name="kode" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit {{ i }}" autocomplete="{{ 'one-time-code' if i == 1 else 'off' }}">
+  {% endfor %}
+</div>
