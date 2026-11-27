@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Bilik suara · Pemira Presma</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-shell="voter" data-page="bilik" data-step="4">
+<main class="stage" id="isi">
+  <div class="stage-inner wide enter">
+    <p class="eyebrow">Langkah 4 · Pemungutan</p>
+    <h1>Bilik suara</h1>
+    <p class="lead">Pilih satu pasangan calon. Setelah dikirim, suara tidak bisa diubah atau ditarik kembali</p>
+
+    <fieldset class="ballot">
+      <legend class="sr">Surat suara Pemilihan Presiden Mahasiswa 2026</legend>
+      <label class="choice">
+        <input type="radio" name="paslon" value="1">
+        <span class="paper"><span class="no">1<span class="hole"></span></span><span class="name">Paslon 1</span><span class="sub">Pasangan calon nomor urut 1</span></span>
+      </label>
+      <label class="choice">
+        <input type="radio" name="paslon" value="2">
+        <span class="paper"><span class="no">2<span class="hole"></span></span><span class="name">Paslon 2</span><span class="sub">Pasangan calon nomor urut 2</span></span>
+      </label>
+    </fieldset>
+
+    <div class="ballot-bar">
+      <p id="pilihan-teks" class="soft" aria-live="polite">Belum ada pilihan</p>
+      <button class="btn btn-primary" id="kirim" type="button" disabled>Kirim suara</button>
+    </div>
+
+    <div class="note" style="margin-top:24px">
+      <span data-icon="key"></span>
+      <p>Suara ditandatangani dengan kunci RSA milikmu, lalu dikirim ke node sebagai transaksi. Node menolak tanda tangan yang tidak cocok dan NIM yang sudah memilih</p>
+    </div>
+  </div>
+</main>
+
+<dialog id="konfirmasi" aria-labelledby="dlg-judul">
+  <div class="dlg-body">
+    <h2 id="dlg-judul">Kirim suara ini?</h2>
+    <div class="picked">
+      <span class="no" id="dlg-no">1</span>
+      <div><p id="dlg-nama">Paslon 1</p><p class="small muted">Tidak bisa diubah setelah dikirim</p></div>
+    </div>
+    <form id="dlg-form" novalidate>
+      <p class="soft">Pastikan pilihanmu sudah benar. Pilih <b>Batal</b> untuk kembali ke surat suara dan memilih ulang</p>
+    </form>
+    <ol class="process" id="langkah-kirim" hidden>
+      <li><span class="dot"></span><span>Menandatangani suara dengan kunci privat<small></small></span></li>
+      <li><span class="dot"></span><span>Mengirim transaksi ke node<small></small></span></li>
+      <li><span class="dot"></span><span>Masuk pool transaksi<small></small></span></li>
+    </ol>
+  </div>
+  <div class="dlg-foot" id="dlg-foot">
+    <button class="btn btn-secondary" id="batal" type="button">Batal, pilih ulang</button>
+    <button class="btn btn-primary" type="submit" form="dlg-form" id="setuju">Setuju, kirim suara</button>
+  </div>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>

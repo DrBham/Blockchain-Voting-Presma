@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Verifikasi email · Pemira Presma</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-shell="voter" data-page="verifikasi" data-step="2">
+<main class="stage" id="isi">
+  <div class="stage-inner enter">
+    <p class="eyebrow">Langkah 2 · Akun</p>
+    <h1>Cek email kampusmu</h1>
+    <p class="lead">Kode 6 digit dikirim ke <b id="ke-email" style="font-weight:500;color:var(--ink)">email kampusmu</b>. Masukkan kode itu untuk mengaktifkan akun. Simpan kodenya: kode yang sama dipakai untuk masuk dan memilih</p>
+
+    <section class="card stack" style="margin-top:24px" aria-labelledby="judul-kode">
+      <h2 id="judul-kode">Kode pemilih</h2>
+      <div class="otp" id="otp" role="group" aria-label="Kode pemilih 6 digit">
+        <input inputmode="numeric" autocomplete="one-time-code" maxlength="1" aria-label="Digit 1">
+        <input inputmode="numeric" maxlength="1" aria-label="Digit 2">
+        <input inputmode="numeric" maxlength="1" aria-label="Digit 3">
+        <input inputmode="numeric" maxlength="1" aria-label="Digit 4">
+        <input inputmode="numeric" maxlength="1" aria-label="Digit 5">
+        <input inputmode="numeric" maxlength="1" aria-label="Digit 6">
+      </div>
+      <p class="msg" id="otp-msg" aria-live="polite">Kode diperiksa otomatis begitu 6 digit terisi</p>
+      <p class="small soft">Belum menerima email? <button class="linkish" type="button" id="kirim-ulang">Kirim ulang kode</button></p>
+      <div class="note" data-icon="mail"><p>Di demo ini email tidak keluar dari komputer. Kotak masuk Mailpit muncul di pojok kanan bawah, pakai tombol isi otomatis atau ketik kodenya</p></div>
+    </section>
+  </div>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Daftar akun · Pemira Presma</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-shell="voter" data-page="daftar" data-step="1">
+<main class="stage" id="isi">
+  <div class="stage-inner enter">
+    <p class="eyebrow">Langkah 1 · Akun</p>
+    <h1>Buat akun pemilih</h1>
+    <p class="lead">NIM-mu dicocokkan dengan DPT, lalu browser membuat dompet berisi sepasang kunci RSA. Kunci publik dicatat panitia ke chain, kunci privat dipakai untuk menandatangani suaramu</p>
+
+    <form class="card stack-lg" id="form-daftar" novalidate style="margin-top:24px">
+      <div>
+        <div class="field">
+          <label class="label" for="nim">NIM</label>
+          <input class="input mono" id="nim" name="nim" autocomplete="username" placeholder="F55124111" maxlength="9" aria-describedby="nim-msg" required>
+          <p class="msg" id="nim-msg" aria-live="polite"></p>
+        </div>
+        <div class="field">
+          <label class="label" for="email">Email kampus</label>
+          <input class="input mono" id="email" name="email" type="email" placeholder="F55124111@untad.ac.id" aria-describedby="email-msg" readonly>
+          <p class="msg" id="email-msg" aria-live="polite">Terisi otomatis dari NIM. Kode pemilih dikirim ke alamat ini</p>
+        </div>
+        <div class="field">
+          <label class="label" for="pw">Password</label>
+          <div class="input-wrap">
+            <input class="input" id="pw" name="pw" type="password" autocomplete="new-password" aria-describedby="pw-msg" required>
+            <button class="peek" type="button" data-peek="pw">Tampilkan</button>
+          </div>
+          <div class="meter" id="meter" data-s="0" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+          <p class="msg" id="pw-msg" aria-live="polite">Minimal 8 karakter</p>
+        </div>
+        <div class="field">
+          <label class="label" for="pw2">Ulangi password</label>
+          <div class="input-wrap">
+            <input class="input" id="pw2" name="pw2" type="password" autocomplete="new-password" aria-describedby="pw2-msg" required>
+            <button class="peek" type="button" data-peek="pw2">Tampilkan</button>
+          </div>
+          <p class="msg" id="pw2-msg" aria-live="polite"></p>
+        </div>
+      </div>
+
+      <div class="note" data-icon="lock"><p>Password juga mengunci kunci privatmu. Panitia tidak menyimpan password dan tidak bisa memulihkannya</p></div>
+
+      <div class="actions" style="margin-top:0">
+        <button class="btn btn-primary" type="submit">Daftar dan buat dompet</button>
+      </div>
+      <p class="alt">Sudah punya akun? <a href="masuk.html">Masuk</a></p>
+    </form>
+
+    <section class="card" id="hasil" hidden aria-live="polite" style="margin-top:16px">
+      <div class="card-head">
+        <div><h2>Dompet dibuat</h2><p>Kunci RSA-PSS 2048 bit, dibuat di browser ini</p></div>
+        <span class="tag wait">Menunggu dicatat panitia</span>
+      </div>
+      <dl class="kv">
+        <dt>Alamat</dt><dd class="mono" id="alamat"></dd>
+        <dt>Kunci publik</dt><dd class="mono" id="pub"></dd>
+      </dl>
+      <div class="actions">
+        <a class="btn btn-primary" href="verifikasi-email.html">Lanjut verifikasi email</a>
+      </div>
+    </section>
+  </div>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

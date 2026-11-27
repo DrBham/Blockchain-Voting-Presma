@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Explorer chain · Pemira Presma</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-shell="panel" data-page="explorer">
+<main class="work" id="isi">
+<div class="work-inner enter">
+  <div class="work-head">
+    <div>
+      <p class="eyebrow">Publik · data dari node-1</p>
+      <h1>Explorer chain</h1>
+      <p class="lead">Setiap block menyimpan hash block sebelumnya. Isi suara disembunyikan, yang tampil hanya tanda tangannya</p>
+    </div>
+  </div>
+
+  <div class="stack">
+    <section class="card tight" aria-label="Ringkasan chain">
+      <div class="spread">
+        <div class="field" style="flex:1;min-width:220px;max-width:360px">
+          <label class="sr" for="cari">Cari block</label>
+          <input class="input" id="cari" type="search" placeholder="#47 atau 0000a81f" autocomplete="off">
+        </div>
+        <div class="row small soft">
+          <span id="valid" class="tag ok">Chain valid</span>
+          <span>Panjang <b id="panjang" class="num" style="font-weight:500;color:var(--ink)">49</b></span>
+          <span>Difficulty 4 · hash diawali <span class="mono pow">0000</span></span>
+          <button class="btn btn-secondary btn-sm" id="pulihkan" type="button" hidden>Pulihkan dari node lain</button>
+        </div>
+      </div>
+    </section>
+
+    <p class="note"><span data-icon="info"></span>Coba ubah isi sebuah block untuk melihat validasi mendeteksinya. Buka block, lalu pilih "Uji: ubah isi block ini"</p>
+
+    <div>
+      <div class="blocks-head" aria-hidden="true"><span>Block</span><span>Nonce</span><span>Hash</span><span>Prev hash</span><span>Tx</span><span>Status</span><span></span></div>
+      <ul class="blocks" id="blocks" aria-live="polite"></ul>
+    </div>
+  </div>
+</div>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

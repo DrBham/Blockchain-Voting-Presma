@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dasbor panitia · Pemira Presma</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-shell="panel" data-page="admin">
+<main class="work" id="isi">
+<div class="work-inner enter">
+  <div class="work-head">
+    <div>
+      <p class="eyebrow">Panitia · KPU Mahasiswa</p>
+      <h1>Dasbor pemilihan</h1>
+      <p class="lead">Pemilihan Presiden Mahasiswa 2026 · 27 November 2026</p>
+    </div>
+    <div class="row">
+      <span id="status-jendela" class="tag ok">Pemungutan dibuka</span>
+      <label class="switch"><input id="buka" type="checkbox" checked><span class="track"></span>Buka pemungutan</label>
+    </div>
+  </div>
+
+  <div class="stack">
+    <section class="grid g-stats" aria-label="Ringkasan">
+      <div class="card tight stat"><p class="stat-label">Panjang chain</p><p class="stat-value"><span id="tinggi">48</span></p><p class="stat-meta">Block terakhir 2 menit lalu</p></div>
+      <div class="card tight stat"><p class="stat-label">Pemilih terdaftar</p><p class="stat-value">1.284</p><p class="stat-meta">Dari 1.310 NIM di DPT</p></div>
+      <div class="card tight stat lead-stat"><p class="stat-label">Suara masuk</p><p class="stat-value"><span id="suara" data-v="732">732</span></p><p class="stat-meta" id="persen">57% dari pemilih terdaftar</p></div>
+      <div class="card tight stat"><p class="stat-label">Node aktif</p><p class="stat-value">3<span class="muted" style="font-size:20px"> / 4</span></p><p class="stat-meta">1 node tidak merespons</p></div>
+    </section>
+
+    <div class="grid g-main">
+      <div class="stack">
+        <section class="card" aria-labelledby="h-antrean">
+          <div class="card-head">
+            <div><h2 id="h-antrean">Antrean registrasi ke chain</h2><p>Pasangan NIM dan kunci publik yang menunggu dicatat</p></div>
+            <button class="btn btn-primary btn-sm" id="catat" type="button">Catat 3 ke chain</button>
+          </div>
+          <div class="table-wrap" id="antrean">
+            <table class="table">
+              <thead><tr><th scope="col">NIM</th><th scope="col">Kunci publik</th><th scope="col">Status</th><th scope="col">Block</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">F55123045</td><td class="mono">30820122…c4f1</td><td><span class="tag ok">Tercatat</span></td><td class="num">#46</td></tr>
+                <tr><td class="mono">F55123051</td><td class="mono">30820122…9ab2</td><td><span class="tag ok">Tercatat</span></td><td class="num">#46</td></tr>
+                <tr><td class="mono">F55123067</td><td class="mono">30820122…e07d</td><td><span class="tag wait">Menunggu</span></td><td class="num">—</td></tr>
+                <tr><td class="mono">C30124012</td><td class="mono">30820122…51c8</td><td><span class="tag wait">Menunggu</span></td><td class="num">—</td></tr>
+                <tr><td class="mono">A12123088</td><td class="mono">30820122…a3f0</td><td><span class="tag wait">Menunggu</span></td><td class="num">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="h-paslon" id="paslon">
+          <div class="card-head">
+            <div><h2 id="h-paslon">Pasangan calon</h2><p>Dikelola PaslonContract di chain, bukan di basis data</p></div>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th scope="col">No</th><th scope="col">Nama tampilan</th><th scope="col">Status</th><th scope="col" class="r">Aksi</th></tr></thead>
+              <tbody>
+                <tr><td><span class="paslon-no">1</span></td><td data-nama>Paslon 1</td><td><span class="tag ok">Aktif</span></td><td><div class="row" style="justify-content:flex-end"><button class="btn btn-secondary btn-sm" data-crud="ubah" type="button">Ubah</button><button class="btn btn-danger btn-sm" data-crud="hapus" type="button">Hapus</button></div></td></tr>
+                <tr><td><span class="paslon-no">2</span></td><td data-nama>Paslon 2</td><td><span class="tag ok">Aktif</span></td><td><div class="row" style="justify-content:flex-end"><button class="btn btn-secondary btn-sm" data-crud="ubah" type="button">Ubah</button><button class="btn btn-danger btn-sm" data-crud="hapus" type="button">Hapus</button></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <form id="tambah" class="row" style="align-items:flex-end;margin-top:16px;padding-top:16px;border-top:1px solid var(--line-soft)" aria-label="Tambah pasangan calon">
+            <div class="field" style="width:110px"><label class="label" for="no">Nomor urut</label><input class="input num" id="no" type="number" min="1" value="3"></div>
+            <div class="field" style="flex:1;min-width:160px;margin-top:0"><label class="label" for="nama">Nama tampilan</label><input class="input" id="nama" value="Paslon 3"></div>
+            <button class="btn btn-secondary" data-crud="tambah" type="submit">Tambah paslon</button>
+          </form>
+          <p class="hint" id="crud-note" style="margin-top:8px"></p>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="card" aria-labelledby="h-valid">
+          <h2 id="h-valid">Validitas chain</h2>
+          <div class="note" style="margin-top:16px">
+            <span data-icon="shield"></span>
+            <div><strong id="validitas" style="font-weight:500;color:var(--ink)">48 block valid</strong><br>Hash, prev hash, dan semua tanda tangan cocok</div>
+          </div>
+          <div class="spread" style="margin-top:12px">
+            <p class="small muted" id="dicek">Dicek 10.45.02</p>
+            <button class="btn btn-secondary btn-sm" id="cek" type="button">Cek ulang</button>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="h-node">
+          <div class="card-head"><h2 id="h-node">Node</h2><a class="small" href="explorer.html">Buka explorer</a></div>
+          <table class="table">
+            <tbody>
+              <tr><td><span class="tag ok">node-1</span><br><span class="mono muted">172.20.0.11:5000</span></td><td class="r small soft">Aktif<br><span class="num muted">48 block</span></td></tr>
+              <tr><td><span class="tag ok">node-2</span><br><span class="mono muted">172.20.0.12:5000</span></td><td class="r small soft">Aktif<br><span class="num muted">48 block</span></td></tr>
+              <tr><td><span class="tag wait">node-3</span><br><span class="mono muted">172.20.0.13:5000</span></td><td class="r small soft">Sinkronisasi<br><span class="num muted">46 block</span></td></tr>
+              <tr><td><span class="tag off">node-4</span><br><span class="mono muted">172.20.0.14:5000</span></td><td class="r small soft">Tidak merespons<br><span class="num muted">—</span></td></tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beranda · Pemira Presma</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-page="beranda">
+<main class="home" id="isi">
+  <section class="home-text enter">
+    <a class="brand" href="index.html"><img src="assets/logo-untad.png" alt="" width="30" height="31"><span><b>Pemira Presma</b><small>Pemilihan Presiden Mahasiswa 2026</small></span></a>
+    <div>
+      <h1>Pemilihan presma yang bisa kamu periksa sendiri</h1>
+      <p class="lead">Setiap suara ditandatangani dengan kunci RSA milik pemilih, lalu dikunci ke block dengan proof of work dan disalin di tiga node. Blockchain-nya ditulis dari nol</p>
+    </div>
+    <nav class="doors" aria-label="Pilih peran">
+      <a class="door main" href="daftar.html"><span class="ic" data-icon="user"></span><span><b>Mulai sebagai pemilih</b><span>Daftar, simpan kode pemilih, lalu coblos</span></span><span data-icon="arrow"></span></a>
+      <a class="door" href="admin.html"><span class="ic" data-icon="grid"></span><span><b>Ruang panitia</b><span>Buka pemungutan, catat registrasi, kelola paslon</span></span><span data-icon="arrow"></span></a>
+      <a class="door" href="explorer.html"><span class="ic" data-icon="blocks"></span><span><b>Explorer chain</b><span>Telusuri block dan uji deteksi perubahan data</span></span><span data-icon="arrow"></span></a>
+    </nav>
+    <div class="home-foot">
+      <p>Proyek mata kuliah Teknologi Blockchain, Universitas Tadulako. Bukan sistem resmi UNTAD.</p>
+      <p>Mockup interaktif · data contoh</p>
+    </div>
+  </section>
+
+  <aside class="home-viz" aria-label="Penambangan langsung">
+    <p class="small soft"><span class="tag wait">Node-1 sedang menambang</span></p>
+    <div id="viz" class="chainviz" aria-live="off"></div>
+    <p class="small muted">Awalan <span class="mono pow">0000</span> berarti proof of work terpenuhi: node mencoba nonce satu per satu sampai hash SHA-256 block diawali empat nol</p>
+  </aside>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
